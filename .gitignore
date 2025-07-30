@@ -1,6 +1,3 @@
-# Ignore frontend directory if it's causing submodule issues
-frontend/
-
 # Python
 __pycache__/
 *.py[cod]
