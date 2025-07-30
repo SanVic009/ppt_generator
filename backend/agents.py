@@ -89,13 +89,18 @@ class PPTAgents:
         """
         return Agent(
             role='Content Creator',
-            goal='Generate engaging and relevant content for each slide based on the presentation plan',
+            goal='Generate engaging and relevant plain-text content for each slide based on the presentation plan',
             backstory="""You are a skilled content writer and researcher who specializes in creating 
             presentation content. You have the ability to transform abstract concepts into clear, 
             engaging text that resonates with audiences. You understand how to write compelling 
             headlines, informative bullet points, and descriptive text that supports the overall 
             presentation narrative. Your content is always well-researched, accurate, and tailored 
-            to the intended audience.""",
+            to the intended audience. 
+            
+            IMPORTANT: You NEVER use markdown formatting like **, *, __, _, ~~, or ` in your content. 
+            You write in plain text only, using clear language and proper sentence structure. 
+            For emphasis, you use capital letters or rephrase sentences. You keep bullet points 
+            concise and under 15 words each.""",
             verbose=True,
             allow_delegation=False,
             llm=self.model
@@ -135,12 +140,31 @@ class PPTTasks:
             
             Number of slides requested: {num_slides}
             
+            Create a varied and engaging presentation structure with different slide types:
+            
+            SLIDE TYPES TO USE:
+            1. "title_only" - For section dividers (large centered titles)
+            2. "bullet_points" - For key points and lists
+            3. "paragraph" - For detailed explanations and narratives  
+            4. "numbered_list" - For step-by-step processes
+            5. "two_column" - For comparing concepts or showing relationships
+            6. "comparison" - For before/after, pros/cons, old vs new
+            7. "image_focus" - For visual concepts with minimal text
+            
             For each slide, determine:
             1. A suitable and engaging title
-            2. A clear description of what the slide should convey
-            3. The content type (paragraph, bullet points, numbered list, etc.)
-            4. Whether visual elements like images, charts, or diagrams are needed
+            2. The most appropriate content_type from the list above
+            3. Specific content structure based on the type
+            4. Whether the content should be detailed paragraphs or concise points
             5. The slide's role in the overall presentation flow
+            
+            CONTENT GUIDELINES:
+            - Mix content types for variety (don't make all slides bullet_points)
+            - Use paragraphs for explanations, stories, and detailed concepts
+            - Use bullet_points for key highlights, features, benefits
+            - Use comparison slides for contrasting ideas
+            - Use title_only slides as section breaks for long presentations
+            - Use two_column for showing relationships or parallel concepts
             
             Output your plan as a structured JSON with the following format:
             {{
@@ -152,17 +176,18 @@ class PPTTasks:
                         "slide_number": 1,
                         "title": "Slide title",
                         "description": "What this slide should convey",
-                        "content_type": "bullet_points|paragraph|numbered_list|title_only",
+                        "content_type": "bullet_points|paragraph|numbered_list|title_only|two_column|comparison|image_focus",
+                        "layout_style": "standard|creative|minimal",
                         "visual_elements": ["image", "chart", "diagram"] or [],
                         "key_points": ["point1", "point2", "point3"]
                     }}
                 ]
             }}
             
-            Ensure the presentation has a logical flow and covers the topic comprehensively.
+            Ensure the presentation has a logical flow, varied slide types, and covers the topic comprehensively.
             """,
             agent=agent,
-            expected_output="A detailed JSON blueprint for the presentation structure"
+            expected_output="A detailed JSON blueprint with varied slide types for the presentation structure"
         )
     
     def content_creation_task(self, agent, planning_result):
@@ -171,28 +196,90 @@ class PPTTasks:
         """
         return Task(
             description=f"""
-            Based on the presentation blueprint provided, generate detailed content for each slide.
+            Based on the presentation blueprint provided, generate detailed and varied content for each slide.
             
             Blueprint: {planning_result}
             
-            For each slide in the blueprint, create:
-            1. Compelling and informative text content
-            2. Appropriate headings and subheadings
-            3. Bullet points, paragraphs, or lists as specified
-            4. Captions or descriptions for visual elements
-            5. Ensure content is engaging, accurate, and well-structured
+            CONTENT CREATION RULES:
+            
+            For BULLET_POINTS slides:
+            - Create 3-5 concise, impactful bullet points
+            - Each point should be 8-15 words maximum
+            - Use action-oriented language
+            - Focus on benefits, features, or key insights
+            
+            For PARAGRAPH slides:
+            - Write 2-4 well-structured paragraphs
+            - Each paragraph should be 30-60 words
+            - Tell a story, explain a concept, or provide detailed analysis
+            - Use engaging, conversational language
+            - Include examples or analogies where helpful
+            
+            For NUMBERED_LIST slides:
+            - Create 3-6 sequential steps or ranked items
+            - Each item should be clear and actionable
+            - Use imperative language for processes
+            
+            For TWO_COLUMN slides:
+            - Provide content for both left_content and right_content
+            - Create complementary or contrasting information
+            - Balance the content length between columns
+            
+            For COMPARISON slides:
+            - Provide left_points and right_points arrays
+            - Create 3-4 points for each side
+            - Use left_title and right_title fields
+            - Focus on clear contrasts or before/after scenarios
+            
+            For TITLE_ONLY slides:
+            - Just provide a powerful, section-dividing title
+            - No additional content needed
+            
+            For IMAGE_FOCUS slides:
+            - Write descriptive content about the visual concept
+            - Add 2-3 supporting bullet points
+            - Include image_description field
+            
+            IMPORTANT FORMATTING RULES:
+            - Do NOT use markdown formatting (avoid **, *, __, _, ~~, `)
+            - Use plain text only
+            - For emphasis, use capital letters or rephrase the sentence
+            - Write in active voice
+            - Use specific, concrete language
+            - Avoid jargon unless necessary
+            
+            CONTENT VARIETY:
+            - Mix detailed explanations with concise points
+            - Include statistics, examples, and actionable insights
+            - Vary sentence structure and length
+            - Use rhetorical questions where appropriate
+            - Include call-to-action elements
             
             Enhance the existing JSON structure by adding content fields:
-            - "content": Main text content for the slide
-            - "bullet_points": Array of bullet points if applicable
-            - "image_descriptions": Descriptions for any images needed
+            - "content": Main text content (for paragraphs and descriptions)
+            - "bullet_points": Array of bullet points (plain text, no markdown)
+            - "numbered_points": Array for numbered lists (plain text)
+            - "left_content" / "right_content": For two-column layouts
+            - "left_points" / "right_points": For comparison layouts
+            - "left_title" / "right_title": For comparison section headers
+            - "image_description": Description for visual content
             - "notes": Speaker notes or additional context
+            
+            Example of good content formats:
+            
+            Bullet Points:
+            - "Increase productivity by 40% with automation tools"
+            - "Reduce operational costs through streamlined processes"
+            - "Enhance customer satisfaction with faster response times"
+            
+            Paragraph:
+            "Digital transformation is reshaping how businesses operate in the 21st century. Companies that embrace technology-driven solutions see significant improvements in efficiency and customer engagement. By implementing cloud-based systems and automated workflows, organizations can focus on strategic initiatives rather than routine tasks."
             
             Maintain the original structure while enriching it with actual content.
             The content should be professional, informative, and appropriate for the intended audience.
             """,
             agent=agent,
-            expected_output="Enhanced JSON with complete textual content for all slides"
+            expected_output="Enhanced JSON with complete, varied plain-text content for all slides (no markdown formatting)"
         )
     
     def design_task(self, agent, content_result):

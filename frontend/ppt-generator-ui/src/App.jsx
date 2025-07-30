@@ -9,11 +9,30 @@ function App() {
   const [socket, setSocket] = useState(null);
   const [prompt, setPrompt] = useState('');
   const [numSlides, setNumSlides] = useState(5);
+  const [selectedTheme, setSelectedTheme] = useState('corporate_blue');
+  const [availableThemes, setAvailableThemes] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentProject, setCurrentProject] = useState(null);
   const [logs, setLogs] = useState([]);
 
   useEffect(() => {
+    // Fetch available themes
+    const fetchThemes = async () => {
+      try {
+        const response = await axios.get(`${API_BASE_URL}/api/themes`);
+        if (response.data.success) {
+          setAvailableThemes(response.data.themes);
+          setSelectedTheme(response.data.default_theme);
+          addLog(`Loaded ${response.data.themes.length} available themes`, 'info');
+        }
+      } catch (error) {
+        console.error('Error fetching themes:', error);
+        addLog('Failed to load themes, using default', 'warning');
+      }
+    };
+
+    fetchThemes();
+
     // Initialize socket connection
     const newSocket = io(API_BASE_URL);
     setSocket(newSocket);
@@ -69,7 +88,8 @@ function App() {
     try {
       const response = await axios.post(`${API_BASE_URL}/api/generate`, {
         prompt: prompt.trim(),
-        num_slides: numSlides
+        num_slides: numSlides,
+        theme: selectedTheme
       });
 
       if (response.data.project_id) {
@@ -151,6 +171,117 @@ function App() {
                 />
                 <p className="text-xs text-gray-400 mt-1">Between 1 and 20 slides</p>
               </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-3">Presentation Theme</label>
+                
+                {/* Custom Theme Selector */}
+                <div className="space-y-3">
+                  {/* Current Selection Display */}
+                  <div className="relative">
+                    <select
+                      className="w-full p-4 bg-gray-700 border-2 border-gray-600 rounded-lg text-white 
+                                appearance-none cursor-pointer hover:border-gray-500 focus:border-blue-500 
+                                focus:outline-none transition-colors text-base"
+                      value={selectedTheme}
+                      onChange={(e) => setSelectedTheme(e.target.value)}
+                      disabled={isGenerating}
+                    >
+                      {availableThemes.map((theme) => (
+                        <option key={theme.id} value={theme.id} className="bg-gray-700 text-white">
+                          {theme.name}
+                        </option>
+                      ))}
+                    </select>
+                    {/* Custom dropdown arrow */}
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </div>
+                  
+                  {/* Theme Preview */}
+                  {availableThemes.find(t => t.id === selectedTheme) && (
+                    <div className="p-4 bg-gray-600 border border-gray-500 rounded-lg">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <h4 className="font-medium text-white mb-1">
+                            {availableThemes.find(t => t.id === selectedTheme).name}
+                          </h4>
+                          <p className="text-gray-300 text-sm mb-3">
+                            {availableThemes.find(t => t.id === selectedTheme).description}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      {/* Color Preview */}
+                      <div className="flex items-center space-x-3">
+                        <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">
+                          Color Palette:
+                        </span>
+                        <div className="flex space-x-2">
+                          <div 
+                            className="w-6 h-6 rounded-full border-2 border-white shadow-sm"
+                            style={{ 
+                              backgroundColor: availableThemes.find(t => t.id === selectedTheme).preview_colors.primary.replace('rgb(', 'rgba(').replace(')', ', 1)')
+                            }}
+                            title="Primary Color"
+                          ></div>
+                          <div 
+                            className="w-6 h-6 rounded-full border-2 border-white shadow-sm"
+                            style={{ 
+                              backgroundColor: availableThemes.find(t => t.id === selectedTheme).preview_colors.secondary.replace('rgb(', 'rgba(').replace(')', ', 1)')
+                            }}
+                            title="Secondary Color"
+                          ></div>
+                          <div 
+                            className="w-6 h-6 rounded-full border-2 border-white shadow-sm"
+                            style={{ 
+                              backgroundColor: availableThemes.find(t => t.id === selectedTheme).preview_colors.accent.replace('rgb(', 'rgba(').replace(')', ', 1)')
+                            }}
+                            title="Accent Color"
+                          ></div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Quick Theme Grid (Optional - for quick selection) */}
+                  <div className="grid grid-cols-3 gap-2 mt-3">
+                    {availableThemes.slice(0, 6).map((theme) => (
+                      <button
+                        key={theme.id}
+                        onClick={() => setSelectedTheme(theme.id)}
+                        disabled={isGenerating}
+                        className={`p-2 rounded-lg border-2 transition-all text-xs
+                          ${selectedTheme === theme.id 
+                            ? 'border-blue-500 bg-blue-500/20' 
+                            : 'border-gray-600 bg-gray-700 hover:border-gray-500'
+                          } ${isGenerating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                      >
+                        <div className="flex space-x-1 justify-center mb-1">
+                          <div 
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: theme.preview_colors.primary.replace('rgb(', 'rgba(').replace(')', ', 1)') }}
+                          ></div>
+                          <div 
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: theme.preview_colors.secondary.replace('rgb(', 'rgba(').replace(')', ', 1)') }}
+                          ></div>
+                          <div 
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: theme.preview_colors.accent.replace('rgb(', 'rgba(').replace(')', ', 1)') }}
+                          ></div>
+                        </div>
+                        <div className="text-white font-medium text-xs truncate">
+                          {theme.name}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="mt-6 space-y-2">
@@ -207,8 +338,49 @@ function App() {
                 <p><strong>Title:</strong> {currentProject.result.presentation_plan.presentation_title}</p>
                 <p><strong>Description:</strong> {currentProject.result.presentation_plan.presentation_description}</p>
                 <p><strong>Total Slides:</strong> {currentProject.result.presentation_plan.total_slides}</p>
+                <p><strong>Theme:</strong> {availableThemes.find(t => t.id === selectedTheme)?.name || selectedTheme}</p>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Available Themes Preview */}
+        {availableThemes.length > 0 && (
+          <div className="mt-8 bg-gray-800 rounded-lg p-6">
+            <h2 className="text-xl font-semibold mb-4">Available Themes</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {availableThemes.map((theme) => (
+                <div 
+                  key={theme.id}
+                  className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                    selectedTheme === theme.id 
+                      ? 'border-green-500 bg-gray-700' 
+                      : 'border-gray-600 bg-gray-750 hover:border-gray-500'
+                  }`}
+                  onClick={() => setSelectedTheme(theme.id)}
+                >
+                  <h3 className="font-semibold text-sm mb-2">{theme.name}</h3>
+                  <p className="text-xs text-gray-400 mb-3">{theme.description}</p>
+                  <div className="flex space-x-2">
+                    <div 
+                      className="w-6 h-6 rounded"
+                      style={{ backgroundColor: theme.preview_colors.primary.replace('rgb(', 'rgba(').replace(')', ', 1)') }}
+                      title="Primary"
+                    ></div>
+                    <div 
+                      className="w-6 h-6 rounded"
+                      style={{ backgroundColor: theme.preview_colors.secondary.replace('rgb(', 'rgba(').replace(')', ', 1)') }}
+                      title="Secondary"
+                    ></div>
+                    <div 
+                      className="w-6 h-6 rounded"
+                      style={{ backgroundColor: theme.preview_colors.accent.replace('rgb(', 'rgba(').replace(')', ', 1)') }}
+                      title="Accent"
+                    ></div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

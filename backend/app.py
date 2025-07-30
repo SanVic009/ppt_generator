@@ -4,6 +4,7 @@ from flask import Flask, request, jsonify, send_file
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_cors import CORS
 from project_manager import PPTProjectManager
+from themes import PPTThemes
 from config import Config
 import logging
 
@@ -38,8 +39,10 @@ def index():
         'status': 'running',
         'service': 'PPT Generator API',
         'version': '1.0.0',
+        'available_themes': PPTThemes.get_theme_display_info(),
         'endpoints': {
             'generate': '/api/generate',
+            'themes': '/api/themes',
             'status': '/api/projects/<id>/status',
             'download': '/api/projects/<id>/download',
             'list': '/api/projects',
@@ -58,6 +61,7 @@ def generate_presentation():
         
         user_prompt = data['prompt'].strip()
         num_slides = data.get('num_slides', Config.DEFAULT_SLIDES)
+        theme_name = data.get('theme', 'corporate_blue')
         
         # Validate inputs
         if not user_prompt:
@@ -66,13 +70,18 @@ def generate_presentation():
         if not isinstance(num_slides, int) or num_slides < 1 or num_slides > Config.MAX_SLIDES:
             return jsonify({'error': f'Number of slides must be between 1 and {Config.MAX_SLIDES}'}), 400
         
+        # Validate theme
+        available_themes = PPTThemes.get_theme_names()
+        if theme_name not in available_themes:
+            return jsonify({'error': f'Invalid theme. Available themes: {", ".join(available_themes)}'}), 400
+        
         # Generate unique project ID
         import uuid
         project_id = str(uuid.uuid4())
         
         # Start generation in background thread
         def generate_async():
-            project_manager.generate_presentation(user_prompt, num_slides, project_id)
+            project_manager.generate_presentation(user_prompt, num_slides, project_id, theme_name)
         
         thread = threading.Thread(target=generate_async)
         thread.daemon = True
@@ -81,11 +90,27 @@ def generate_presentation():
         return jsonify({
             'success': True,
             'project_id': project_id,
+            'theme': theme_name,
             'message': 'Presentation generation started'
         })
         
     except Exception as e:
         logger.error(f"Error in generate_presentation: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/api/themes', methods=['GET'])
+def get_themes():
+    """Get available presentation themes"""
+    try:
+        themes = PPTThemes.get_theme_display_info()
+        return jsonify({
+            'success': True,
+            'themes': themes,
+            'default_theme': 'corporate_blue',
+            'total': len(themes)
+        })
+    except Exception as e:
+        logger.error(f"Error getting themes: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/api/projects/<project_id>/status', methods=['GET'])

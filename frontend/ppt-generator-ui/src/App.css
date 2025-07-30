@@ -3,3 +3,49 @@
 body {
   font-family: 'Inter', 'Poppins', system-ui, -apple-system, sans-serif;
 }
+
+/* Custom styles for theme dropdown */
+select {
+  background-image: none !important;
+}
+
+/* Ensure dropdown options are visible */
+select option {
+  background-color: #374151 !important; /* gray-700 */
+  color: white !important;
+  padding: 8px 12px !important;
+  border: none !important;
+}
+
+select option:hover {
+  background-color: #4B5563 !important; /* gray-600 */
+}
+
+select option:checked {
+  background-color: #3B82F6 !important; /* blue-500 */
+}
+
+/* Improve visibility for disabled state */
+select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Custom scrollbar for the dropdown area */
+.theme-grid::-webkit-scrollbar {
+  width: 4px;
+}
+
+.theme-grid::-webkit-scrollbar-track {
+  background: #374151;
+  border-radius: 2px;
+}
+
+.theme-grid::-webkit-scrollbar-thumb {
+  background: #6B7280;
+  border-radius: 2px;
+}
+
+.theme-grid::-webkit-scrollbar-thumb:hover {
+  background: #9CA3AF;
+}

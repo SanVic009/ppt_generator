@@ -6,8 +6,8 @@ load_dotenv()
 class Config:
     # API Configuration
     GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-    CREWAI_MODEL = "gemini/gemini-2.0-flash"
-    FALLBACK_MODEL = "gemini/gemini-1.5-flash"  # Fallback model for when primary is overloaded
+    CREWAI_MODEL = "gemini/gemini-2.5-flash"
+    FALLBACK_MODEL = "gemini/gemini-2.5-flash"  # Fallback model for when primary is overloaded
     
     # Flask Configuration
     SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
