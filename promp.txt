@@ -1,0 +1,21 @@
+1. Currently, the ppt is being generated using python library. Change the code such that it will be created using html and css.
+2. Add in the designer agent prompt : get as creative as you can in the design agent. Also get creative with the First slide as it is very important in any presentation
+3. Currently, in the ppt, there are many slides with a single colour background and the heading writtin in bold in the centre of the slide. make sure in one ppt there is one or less than one slide of this type.
+
+
+
+Furutre plan:
+add an agent that helps the ocntent creator agent to scrape the web to get the relevant information
+
+
+
+Task: Generate a presentation as an HTML/CSS single-page slide deck (Reveal.js or similar), replacing the current Python .pptx generation process.
+Design Instructions:
+    Creativity Priority: Apply maximum creativity in slide design, especially for the first slide, which must be visually striking and set the tone for the presentation.
+    Slide Variety Rule: Limit to at most one slide with a plain, single-color background and centered bold heading. Prefer textured, image-based, gradient, or patterned backgrounds with well-composed typography.
+    Consistency & Professionalism: Ensure visual coherence in fonts, color palettes, and layout across slides.
+Output Requirements:
+    HTML and Tailwind CSS-based presentation.
+    Fully responsive and optimized for full-screen presentation.
+    Structured in a way that the backend can populate slide content from JSON or XML.
+

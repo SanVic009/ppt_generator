@@ -41,3 +41,6 @@ temp/
 # OS
 .DS_Store
 Thumbs.db
+
+# agents2.py file
+agents2.py
