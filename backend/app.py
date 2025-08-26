@@ -1,6 +1,9 @@
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning, module='pydantic')
+
 import os
-import threading
-from flask import Flask, request, jsonify, send_file
+from datetime import datetime
+from flask import Flask, request, jsonify, send_file, render_template_string
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_cors import CORS
 from project_manager import PPTProjectManager
@@ -11,6 +14,10 @@ import logging
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Configure project_manager logger to suppress INFO messages
+project_manager_logger = logging.getLogger('project_manager')
+project_manager_logger.setLevel(logging.WARNING)
 
 # Validate configuration
 try:
@@ -26,11 +33,190 @@ app.config['SECRET_KEY'] = Config.SECRET_KEY
 # Enable CORS for all routes
 CORS(app, origins="*")
 
-# Initialize SocketIO
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+# Initialize SocketIO with eventlet for better performance and no duplication
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', logger=False, engineio_logger=False)
 
-# Initialize project manager
+# Initialize project manager as a global singleton
 project_manager = PPTProjectManager(socketio=socketio)
+
+# Download routes
+@app.route('/api/presentations/<presentation_id>/download/pdf', methods=['GET'])
+def download_pdf(presentation_id):
+    try:
+        pdf_path = project_manager.get_pdf_path(presentation_id)
+        if pdf_path and os.path.exists(pdf_path):
+            return send_file(pdf_path, 
+                           mimetype='application/pdf',
+                           as_attachment=True,
+                           download_name=f'presentation_{presentation_id}.pdf')
+        return jsonify({'error': 'PDF not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/presentations/<presentation_id>/download/response', methods=['GET'])
+def download_response(presentation_id):
+    try:
+        response_path = project_manager.get_response_path(presentation_id)
+        if response_path and os.path.exists(response_path):
+            return send_file(response_path,
+                           mimetype='application/json',
+                           as_attachment=True,
+                           download_name=f'response_{presentation_id}.json')
+        return jsonify({'error': 'Response file not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# Create new presentation route
+@app.route('/api/presentations', methods=['POST'])
+def create_presentation():
+    try:
+        data = request.json
+        title = data.get('title', 'Untitled Presentation')
+        description = data.get('description', '')
+        style_preferences = data.get('style_preferences', {})
+        num_slides = style_preferences.get('num_slides', 5)
+        theme_name = style_preferences.get('theme', 'modern')
+        
+        # Start generation process
+        try:
+            result = project_manager.generate_presentation(
+                user_prompt=title,
+                num_slides=num_slides,
+                theme_name=theme_name,
+            )
+            
+            if result['success']:
+                project_id = result['project_id']
+                output_path = result['file_path']
+            else:
+                raise Exception(result['user_message'])
+            
+            return jsonify({
+                'status': 'success',
+                'project_id': project_id,
+                'output_path': output_path,
+                'themes': []
+            }), 200
+            
+        except Exception as gen_error:
+            logger.error(f"Generation error: {str(gen_error)}")
+            return jsonify({
+                'status': 'error',
+                'message': str(gen_error)
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"Failed to create presentation: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+# Get presentation route
+@app.route('/api/presentations/<project_id>', methods=['GET'])
+def get_presentation(project_id):
+    try:
+        # Instead of using project_manager.presentation_generator (which doesn't exist),
+        # just fetch the project info from project_manager.projects
+        presentation = project_manager.projects.get(project_id)
+
+        if not presentation:
+            return jsonify({
+                'status': 'error',
+                'message': f'Presentation with ID {project_id} not found'
+            }), 404
+
+        return jsonify({
+            'status': 'success',
+            'presentation': presentation
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Failed to get presentation: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+# Generate presentation route
+@app.route('/api/presentations/<project_id>/generate', methods=['POST'])
+def generate_presentation(project_id):
+    try:
+        data = request.json
+        topic = data.get('topic', '')
+        
+        # Emit starting status
+        socketio.emit('status_update', {
+            'type': 'info',
+            'message': 'Starting presentation generation',
+            'agent': 'system',
+            'timestamp': datetime.now().isoformat()
+        }, room=project_id)
+        
+        # Generate the presentation
+        result = project_manager.generate_presentation(
+            user_prompt=topic,
+            num_slides=5,
+            project_id=project_id
+        )
+        
+        if result['success']:
+            return jsonify({
+                'status': 'success',
+                'output_path': result['file_path']
+            }), 200
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': result['user_message']
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"Failed to generate presentation: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+
+# Websocket event handlers
+@socketio.on('connect')
+def handle_connect():
+    logger.info(f"Client connected: {request.sid}")
+    emit('status_update', {
+        'type': 'info',
+        'message': 'Connected to server',
+        'timestamp': datetime.now().isoformat()
+    })
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    logger.info(f"Client disconnected: {request.sid}")
+
+@socketio.on('join')
+def handle_join(data):
+    room = data.get('room')
+    if room:
+        join_room(room)
+        logger.info(f"Client {request.sid} joined room {room}")
+        # Removed the joined room message as requested
+
+@socketio.on('leave')
+def handle_leave(data):
+    room = data.get('room')
+    if room:
+        emit('status_update', {
+            'type': 'info',
+            'message': f'Leaving room: {room}',
+            'timestamp': datetime.now().isoformat()
+        }, room=room)
+        leave_room(room)
+        logger.info(f"Client {request.sid} left room {room}")
+
 
 @app.route('/')
 def index():
@@ -50,53 +236,7 @@ def index():
         }
     })
 
-@app.route('/api/generate', methods=['POST'])
-def generate_presentation():
-    """Start presentation generation"""
-    try:
-        data = request.get_json()
-        
-        if not data or 'prompt' not in data:
-            return jsonify({'error': 'Prompt is required'}), 400
-        
-        user_prompt = data['prompt'].strip()
-        num_slides = data.get('num_slides', Config.DEFAULT_SLIDES)
-        theme_name = data.get('theme', 'corporate_blue')
-        
-        # Validate inputs
-        if not user_prompt:
-            return jsonify({'error': 'Prompt cannot be empty'}), 400
-        
-        if not isinstance(num_slides, int) or num_slides < 1 or num_slides > Config.MAX_SLIDES:
-            return jsonify({'error': f'Number of slides must be between 1 and {Config.MAX_SLIDES}'}), 400
-        
-        # Validate theme
-        available_themes = PPTThemes.get_theme_names()
-        if theme_name not in available_themes:
-            return jsonify({'error': f'Invalid theme. Available themes: {", ".join(available_themes)}'}), 400
-        
-        # Generate unique project ID
-        import uuid
-        project_id = str(uuid.uuid4())
-        
-        # Start generation in background thread
-        def generate_async():
-            project_manager.generate_presentation(user_prompt, num_slides, project_id, theme_name)
-        
-        thread = threading.Thread(target=generate_async)
-        thread.daemon = True
-        thread.start()
-        
-        return jsonify({
-            'success': True,
-            'project_id': project_id,
-            'theme': theme_name,
-            'message': 'Presentation generation started'
-        })
-        
-    except Exception as e:
-        logger.error(f"Error in generate_presentation: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
+
 
 @app.route('/api/themes', methods=['GET'])
 def get_themes():
@@ -135,8 +275,8 @@ def download_project(project_id):
         return send_file(
             file_path,
             as_attachment=True,
-            download_name=f'presentation_{project_id}.pptx',
-            mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation'
+            download_name=f'presentation_{project_id}.json',
+            mimetype='application/json'
         )
         
     except Exception as e:
@@ -219,7 +359,6 @@ if __name__ == '__main__':
         host='0.0.0.0',
         port=5000,
         debug=Config.DEBUG,
-        use_reloader=Config.USE_RELOADER,  # Disable auto-reload to prevent interrupting long-running tasks
         allow_unsafe_werkzeug=True
     )
 

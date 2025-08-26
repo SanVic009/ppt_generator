@@ -1,7 +1,7 @@
-import os
 import time
 import google.generativeai as genai
 from crewai import Agent, Task, Crew, Process
+from crewai_tools import tool
 from config import Config
 import logging
 
@@ -10,6 +10,14 @@ logger = logging.getLogger(__name__)
 
 # Configure Gemini API
 genai.configure(api_key=Config.GEMINI_API_KEY)
+
+# Generation settings will be applied when creating the model
+DEFAULT_GENERATION_CONFIG = {
+    "temperature": 0.7,
+    "top_p": 0.8,
+    "top_k": 40,
+    "max_output_tokens": 8192,
+}
 
 def retry_with_backoff(func, max_retries=None, delay=None, backoff=None):
     """
@@ -62,11 +70,41 @@ class PPTAgents:
     """
     
     def __init__(self, use_fallback_model=False):
-        self.model = Config.FALLBACK_MODEL if use_fallback_model else Config.CREWAI_MODEL
-        self.use_fallback = use_fallback_model
-        if use_fallback_model:
-            logger.info(f"Using fallback model: {self.model}")
-    
+        try:
+            self.model = Config.FALLBACK_MODEL if use_fallback_model else Config.CREWAI_MODEL
+            self.use_fallback = use_fallback_model
+            if use_fallback_model:
+                logger.info(f"Using fallback model: {self.model}")
+            
+            # Create model instance with generation settings
+            self.model_instance = genai.GenerativeModel(
+                self.model,
+                generation_config=DEFAULT_GENERATION_CONFIG
+            )
+            logger.info(f"Successfully initialized model: {self.model}")
+        except Exception as e:
+            logger.error(f"Error initializing agent model: {e}")
+            raise
+            
+    def presentation_generator_agent(self):
+        """
+        Presentation Generator Agent: Creates the final presentation output from the content and design specifications.
+        """
+        # Define the tool as a dictionary with the required structure
+
+        return Agent(
+            role='Presentation Generator',
+            goal='Transform the design specifications into a polished, interactive presentation',
+            backstory="""You are an expert presentation developer with years of experience in creating 
+            stunning digital presentations. You understand modern web technologies, visual design principles,
+            and how to create engaging, interactive presentations. Your skills include implementing smooth
+            transitions, responsive layouts, and ensuring the final presentation is both visually appealing
+            and functionally robust. You excel at converting complex design specifications into polished,
+            professional presentations that effectively communicate the intended message.""",
+            verbose=True,
+            allow_delegation=False,
+            llm=getattr(self, 'model_instance', self.model)  # Fallback to self.model if model_instance isn't available
+        )
     def planner_agent(self):
         """
         Planner Agent: Analyzes user requirements and creates a detailed presentation blueprint.
@@ -135,30 +173,38 @@ class PPTTasks:
         """
         return Task(
             description=f"""
-            Create a detailed presentation blueprint based on the following user request:
-            "{user_prompt}"
+            Based on the user request: "{user_prompt}"
             
-            Number of slides requested: {num_slides}
+            Create a presentation plan with exactly {num_slides} slides.
             
-            Create a varied and engaging presentation structure with different slide types:
+            Your response MUST be a valid JSON object with this exact structure:
+            {{
+                "presentation_title": "Title of the presentation",
+                "presentation_description": "Brief description of the presentation",
+                "slides": [
+                    {{
+                        "title": "Slide title",
+                        "content_type": "one of: title_only, bullet_points, paragraph, numbered_list, two_column, comparison, image_focus",
+                        "description": "Brief description of the slide's purpose",
+                        "content": "For paragraph type",
+                        "bullet_points": ["Point 1", "Point 2", "Point 3"],  // For bullet_points type
+                        "layout_style": "standard"  // or any specific layout name
+                    }}
+                ]
+            }}
             
-            SLIDE TYPES TO USE:
-            1. "title_only" - For section dividers (large centered titles)
-            2. "bullet_points" - For key points and lists
-            3. "paragraph" - For detailed explanations and narratives  
-            4. "numbered_list" - For step-by-step processes
-            5. "two_column" - For comparing concepts or showing relationships
-            6. "comparison" - For before/after, pros/cons, old vs new
-            7. "image_focus" - For visual concepts with minimal text
-            
-            For each slide, determine:
-            1. A suitable and engaging title
-            2. The most appropriate content_type from the list above
-            3. Specific content structure based on the type
-            4. Whether the content should be detailed paragraphs or concise points
-            5. The slide's role in the overall presentation flow
-            
-            CONTENT GUIDELINES:
+            IMPORTANT RULES:
+            1. Response must be ONLY the JSON object - no explanation text, no markdown formatting
+            2. All text content must be plain text - no markdown, no formatting symbols
+            3. Each slide must have at least title and content_type
+            4. Use appropriate content_type based on the content:
+               - title_only: For section dividers (large centered titles)
+               - bullet_points: For key points and lists
+               - paragraph: For detailed explanations
+               - numbered_list: For steps or processes
+               - two_column: For comparisons
+               - comparison: For pros/cons
+               - image_focus: For visual emphasis
             - Mix content types for variety (don't make all slides bullet_points)
             - Use paragraphs for explanations, stories, and detailed concepts
             - Use bullet_points for key highlights, features, benefits
@@ -194,11 +240,22 @@ class PPTTasks:
         """
         Task for the Content Creator Agent to generate actual content for each slide.
         """
+        # Ensure planning_result is properly formatted
+        if isinstance(planning_result, str):
+            try:
+                # Clean up any markdown formatting
+                planning_result = planning_result.replace('```json\n', '').replace('\n```', '')
+            except Exception as e:
+                logger.warning(f"Error cleaning planning result: {e}")
+                
         return Task(
             description=f"""
             Based on the presentation blueprint provided, generate detailed and varied content for each slide.
             
             Blueprint: {planning_result}
+            
+            Your task is to generate complete, detailed content for each slide, including all text,
+            bullet points, and descriptions. The output should be a complete JSON with no markdown formatting.
             
             CONTENT CREATION RULES:
             
@@ -279,7 +336,7 @@ class PPTTasks:
             The content should be professional, informative, and appropriate for the intended audience.
             """,
             agent=agent,
-            expected_output="Enhanced JSON with complete, varied plain-text content for all slides (no markdown formatting)"
+            expected_output="Complete JSON with detailed content for all slides, including text, bullet points, and descriptions"
         )
     
     def design_task(self, agent, content_result):
@@ -319,76 +376,114 @@ class PPTTasks:
             expected_output="Complete JSON with content and comprehensive design specifications"
         )
 
+    def presentation_generation_task(self, agent, design_result):
+        """
+        Task for the Presentation Generator Agent to create the final presentation.
+        """
+        return Task(
+            description=f'''
+            Based on the design specifications provided, generate a complete, single HTML file
+            for the presentation.
+
+            Design Specifications: {design_result}
+
+            Your task is to create a single HTML file that includes all the necessary HTML, CSS to render the presentations. DO NOT use javascript
+
+            Just create the html, css jss code for the presentation and presentation only. Do 
+            not create anything else. The code will be converted into pdf then into ppt so dont 
+            create anything extra such as buttons 
+
+            The final output should be a single HTML code that will eventually be converted into
+            a pdf or a pptx file.
+            ''',
+            agent=agent,
+            expected_output="A single HTML file containing the complete presentation."
+        )
+
 class PPTCrew:
     """
-    Orchestrates the entire PPT generation process using CrewAI.
+    Orchestrates the AI agents in the presentation creation process.
     """
     
-    def __init__(self):
-        self.agents = PPTAgents()
-        self.tasks = PPTTasks()
-        self.fallback_agents = None
-    
+    def __init__(self, use_fallback_model=False):
+        self.agents = PPTAgents(use_fallback_model)
+        self.tasks = PPTTasks()  # Initialize tasks instance
+
     @retry_with_backoff
-    def _execute_crew(self, crew):
+    def create_presentation(self, topic, style_preferences=None):
         """
-        Execute crew with retry logic for handling API overload.
-        """
-        return crew.kickoff()
-    
-    def create_presentation_plan(self, user_prompt, num_slides=5):
-        """
-        Execute the complete PPT planning and content creation process.
-        """
-        try:
-            # Try with primary model first
-            logger.info(f"Starting presentation generation with primary model: {self.agents.model}")
-            return self._generate_with_agents(self.agents, user_prompt, num_slides)
-            
-        except Exception as e:
-            error_str = str(e)
-            
-            # If primary model fails with overload, try fallback model
-            if ("503" in error_str or "overloaded" in error_str.lower() or "unavailable" in error_str.lower()) and not self.agents.use_fallback:
-                logger.warning(f"Primary model overloaded, trying fallback model...")
-                
-                if self.fallback_agents is None:
-                    self.fallback_agents = PPTAgents(use_fallback_model=True)
-                
-                try:
-                    return self._generate_with_agents(self.fallback_agents, user_prompt, num_slides)
-                except Exception as fallback_error:
-                    logger.error(f"Fallback model also failed: {str(fallback_error)}")
-                    # If both fail, raise the original error
-                    raise e
-            else:
-                # For non-overload errors or if already using fallback, just raise
-                raise e
-    
-    def _generate_with_agents(self, agents, user_prompt, num_slides):
-        """
-        Generate presentation using the specified agents.
+        Create a presentation using multiple AI agents.
         """
         # Initialize agents
-        planner = agents.planner_agent()
-        content_creator = agents.content_creator_agent()
-        designer = agents.designer_agent()
-        
-        # Create tasks
-        planning_task = self.tasks.planning_task(planner, user_prompt, num_slides)
-        content_task = self.tasks.content_creation_task(content_creator, planning_task)
-        design_task = self.tasks.design_task(designer, content_task)
-        
-        # Create and execute crew
+        planner = self.agents.planner_agent()
+        content_creator = self.agents.content_creator_agent()
+        designer = self.agents.designer_agent()
+        generator = self.agents.presentation_generator_agent()
+
+        # Create tasks using the task manager
+        planning_task = self.tasks.planning_task(
+            planner, topic, style_preferences.get('num_slides', 5)
+        )
+
+        content_task = self.tasks.content_creation_task(
+            content_creator, "{planning_result}"  # Will be replaced with actual result
+        )
+        content_task.context = [planning_task]
+
+        design_task = self.tasks.design_task(
+            designer, "{content_result}"  # Will be replaced with actual result
+        )
+        design_task.context = [content_task]
+
+        generation_task = self.tasks.presentation_generation_task(
+            generator, "{design_result}"
+        )
+        generation_task.context = [design_task]
+
+        # Create crew with sequential process and clear task dependencies
         crew = Crew(
-            agents=[planner, content_creator, designer],
-            tasks=[planning_task, content_task, design_task],
+            agents=[planner],  # Start with just the planner
+            tasks=[planning_task],
+            process=Process.sequential,
+            verbose=True  # Enable verbosity for debugging
+        )
+
+        # Execute tasks one at a time with proper result handling
+        logger.info("Starting planning phase...")
+        planning_result = crew.kickoff()
+        
+        # Update content task with planning results and create new crew
+        content_task.description = content_task.description.format(planning_result=planning_result)
+        crew = Crew(
+            agents=[content_creator],
+            tasks=[content_task],
             process=Process.sequential,
             verbose=True
         )
         
-        # Execute the crew with retry logic and return results
-        result = self._execute_crew(crew)
-        logger.info("Presentation generation completed successfully")
-        return result
+        logger.info("Starting content creation phase...")
+        content_result = crew.kickoff()
+        
+        # Update design task with content results and create new crew
+        design_task.description = design_task.description.format(content_result=content_result)
+        crew = Crew(
+            agents=[designer],
+            tasks=[design_task],
+            process=Process.sequential,
+            verbose=True
+        )
+        
+        logger.info("Starting design phase...")
+        design_result = crew.kickoff()
 
+        # Update generation task with design results and create new crew
+        generation_task.description = generation_task.description.format(design_result=design_result)
+        crew = Crew(
+            agents=[generator],
+            tasks=[generation_task],
+            process=Process.sequential,
+            verbose=True
+        )
+
+        logger.info("Starting presentation generation phase...")
+        return crew.kickoff()

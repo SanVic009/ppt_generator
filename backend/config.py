@@ -11,9 +11,9 @@ class Config:
     
     # Flask Configuration
     SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
-    FLASK_ENV = os.getenv('FLASK_ENV', 'development')
-    DEBUG = os.getenv('FLASK_DEBUG', 'True').lower() == 'true'
-    USE_RELOADER = os.getenv('FLASK_USE_RELOADER', 'False').lower() == 'true'  # Control auto-reload separately
+    FLASK_ENV = 'production'  # Force production mode to prevent auto-reload
+    DEBUG = False  # Disable debug mode to prevent duplicate processes
+    USE_RELOADER = False  # Explicitly disable reloader
     
     # PPT Generation Configuration
     MAX_SLIDES = 20  # Maximum number of slides allowed

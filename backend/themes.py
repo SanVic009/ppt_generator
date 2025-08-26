@@ -3,22 +3,25 @@ Professional PowerPoint themes with comprehensive styling options.
 Each theme includes color schemes, fonts, backgrounds, and layout preferences.
 """
 
-from pptx.dml.color import RGBColor
 from pptx.util import Pt
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import Dict, List, Tuple, Optional
 
 @dataclass
 class ColorScheme:
     """Color scheme for a theme"""
-    primary: RGBColor
-    secondary: RGBColor
-    accent: RGBColor
-    background_start: RGBColor
-    background_end: RGBColor
-    text_primary: RGBColor
-    text_secondary: RGBColor
-    text_light: RGBColor
+    primary: str
+    secondary: str
+    accent: str
+    background_start: str
+    background_end: str
+    text_primary: str
+    text_secondary: str
+    text_light: str
+
+    def to_dict(self) -> dict:
+        """Convert color scheme to dictionary with hex values"""
+        return asdict(self)
 
 @dataclass
 class FontScheme:
@@ -41,10 +44,51 @@ class ThemeConfig:
     gradient_angle: int
     icon_style: str  # 'modern', 'classic', 'minimal', 'creative'
     layout_preference: str  # 'balanced', 'text_heavy', 'visual_focused'
+    
+    def get_css(self) -> str:
+        """Generate CSS for the theme"""
+        return f"""
+            :root {{
+                --font-heading: {self.font_scheme.title_font}, system-ui, sans-serif;
+                --font-body: {self.font_scheme.content_font}, system-ui, sans-serif;
+                --color-primary: {self.color_scheme.primary};
+                --color-secondary: {self.color_scheme.secondary};
+                --color-accent: {self.color_scheme.accent};
+                --color-background-start: {self.color_scheme.background_start};
+                --color-background-end: {self.color_scheme.background_end};
+                --color-text-primary: {self.color_scheme.text_primary};
+                --color-text-secondary: {self.color_scheme.text_secondary};
+                --color-text-light: {self.color_scheme.text_light};
+            }}
+            
+            .theme-{self.name} {{
+                background: {self.color_scheme.background_start};
+                background-image: linear-gradient({self.gradient_angle}deg, {self.color_scheme.background_start}, {self.color_scheme.background_end});
+                color: {self.color_scheme.text_primary};
+            }}
+            
+            .theme-{self.name} h1,
+            .theme-{self.name} h2,
+            .theme-{self.name} h3 {{
+                font-family: var(--font-heading);
+                color: var(--color-primary);
+            }}
+            
+            .theme-{self.name} p {{
+                font-family: var(--font-body);
+                font-size: {self.font_scheme.content_size}pt;
+            }}
+            
+            .theme-{self.name} ul,
+            .theme-{self.name} ol {{
+                font-family: var(--font-body);
+                font-size: {self.font_scheme.bullet_size}pt;
+            }}
+        """
 
 class PPTThemes:
     """Professional PowerPoint themes collection"""
-    
+
     @staticmethod
     def get_all_themes() -> Dict[str, ThemeConfig]:
         """Get all available themes"""
@@ -65,18 +109,18 @@ class PPTThemes:
             'healthcare_mint': PPTThemes._healthcare_mint(),
             'startup_energy': PPTThemes._startup_energy()
         }
-    
+
     @staticmethod
     def get_theme(theme_name: str) -> Optional[ThemeConfig]:
         """Get a specific theme by name"""
         themes = PPTThemes.get_all_themes()
         return themes.get(theme_name)
-    
+
     @staticmethod
     def get_theme_names() -> List[str]:
         """Get list of available theme names"""
         return list(PPTThemes.get_all_themes().keys())
-    
+
     @staticmethod
     def get_theme_display_info() -> List[Dict]:
         """Get theme information for UI display"""
@@ -86,15 +130,36 @@ class PPTThemes:
                 'id': theme_id,
                 'name': theme.display_name,
                 'description': theme.description,
-                'preview_colors': {
-                    'primary': f"rgb({theme.color_scheme.primary[0]}, {theme.color_scheme.primary[1]}, {theme.color_scheme.primary[2]})",
-                    'secondary': f"rgb({theme.color_scheme.secondary[0]}, {theme.color_scheme.secondary[1]}, {theme.color_scheme.secondary[2]})",
-                    'accent': f"rgb({theme.color_scheme.accent[0]}, {theme.color_scheme.accent[1]}, {theme.color_scheme.accent[2]})"
+                'colors': theme.color_scheme.to_dict(),
+                'fonts': {
+                    'heading': theme.font_scheme.title_font,
+                    'body': theme.font_scheme.content_font
+                },
+                'gradient_angle': theme.gradient_angle,
+                'layout_preference': theme.layout_preference,
+                'gradients': {
+                    'primary': PPTThemes._generate_gradient_css(
+                        theme.color_scheme.primary,
+                        theme.color_scheme.secondary,
+                        theme.gradient_angle
+                    ),
+                    'secondary': PPTThemes._generate_gradient_css(
+                        theme.color_scheme.secondary,
+                        theme.color_scheme.accent,
+                        theme.gradient_angle
+                    )
                 }
             }
             for theme_id, theme in themes.items()
         ]
-    
+
+    @staticmethod
+    def _generate_gradient_css(color1: str, color2: str, angle: int) -> str:
+        """
+        Generates a CSS linear-gradient string from two hex color strings and an angle.
+        """
+        return f"linear-gradient({angle}deg, {color1}, {color2})"
+
     @staticmethod
     def _corporate_blue() -> ThemeConfig:
         """Professional corporate blue theme"""
@@ -103,14 +168,14 @@ class PPTThemes:
             display_name='Corporate Blue',
             description='Professional and trustworthy with classic blue tones',
             color_scheme=ColorScheme(
-                primary=RGBColor(13, 71, 161),      # Deep blue
-                secondary=RGBColor(66, 165, 245),   # Light blue
-                accent=RGBColor(255, 193, 7),       # Amber accent
-                background_start=RGBColor(240, 248, 255),
-                background_end=RGBColor(227, 242, 253),
-                text_primary=RGBColor(33, 37, 41),
-                text_secondary=RGBColor(108, 117, 125),
-                text_light=RGBColor(255, 255, 255)
+                primary='#0d47a1',
+                secondary='#42a5f5',
+                accent='#ffc107',
+                background_start='#f0f8ff',
+                background_end='#e3f2fd',
+                text_primary='#212529',
+                text_secondary='#6c757d',
+                text_light='#ffffff'
             ),
             font_scheme=FontScheme(
                 title_font='Segoe UI Semibold',
@@ -124,7 +189,7 @@ class PPTThemes:
             icon_style='classic',
             layout_preference='balanced'
         )
-    
+
     @staticmethod
     def _modern_gradient() -> ThemeConfig:
         """Modern gradient theme with contemporary colors"""
@@ -133,14 +198,14 @@ class PPTThemes:
             display_name='Modern Gradient',
             description='Contemporary design with smooth gradients and modern typography',
             color_scheme=ColorScheme(
-                primary=RGBColor(102, 51, 153),     # Purple
-                secondary=RGBColor(156, 39, 176),   # Deep purple
-                accent=RGBColor(255, 87, 34),       # Orange accent
-                background_start=RGBColor(248, 245, 255),
-                background_end=RGBColor(240, 230, 255),
-                text_primary=RGBColor(33, 33, 33),
-                text_secondary=RGBColor(97, 97, 97),
-                text_light=RGBColor(255, 255, 255)
+                primary='#663399',
+                secondary='#9c27b0',
+                accent='#ff5722',
+                background_start='#f8f5ff',
+                background_end='#f0e6ff',
+                text_primary='#212121',
+                text_secondary='#616161',
+                text_light='#ffffff'
             ),
             font_scheme=FontScheme(
                 title_font='Segoe UI Light',
@@ -154,7 +219,7 @@ class PPTThemes:
             icon_style='modern',
             layout_preference='visual_focused'
         )
-    
+
     @staticmethod
     def _elegant_dark() -> ThemeConfig:
         """Elegant dark theme for sophisticated presentations"""
@@ -163,14 +228,14 @@ class PPTThemes:
             display_name='Elegant Dark',
             description='Sophisticated dark theme with gold accents for premium feel',
             color_scheme=ColorScheme(
-                primary=RGBColor(33, 37, 41),       # Dark gray
-                secondary=RGBColor(52, 58, 64),     # Medium gray
-                accent=RGBColor(255, 193, 7),       # Gold accent
-                background_start=RGBColor(52, 58, 64),
-                background_end=RGBColor(33, 37, 41),
-                text_primary=RGBColor(248, 249, 250),
-                text_secondary=RGBColor(206, 212, 218),
-                text_light=RGBColor(255, 255, 255)
+                primary='#212529',
+                secondary='#343a40',
+                accent='#ffc107',
+                background_start='#343a40',
+                background_end='#212529',
+                text_primary='#f8f9fa',
+                text_secondary='#ced4da',
+                text_light='#ffffff'
             ),
             font_scheme=FontScheme(
                 title_font='Segoe UI',
@@ -184,7 +249,7 @@ class PPTThemes:
             icon_style='minimal',
             layout_preference='text_heavy'
         )
-    
+
     @staticmethod
     def _nature_green() -> ThemeConfig:
         """Nature-inspired green theme"""
@@ -193,14 +258,14 @@ class PPTThemes:
             display_name='Nature Green',
             description='Fresh and natural with green tones, perfect for environmental topics',
             color_scheme=ColorScheme(
-                primary=RGBColor(46, 125, 50),      # Forest green
-                secondary=RGBColor(102, 187, 106),  # Light green
-                accent=RGBColor(255, 167, 38),      # Orange accent
-                background_start=RGBColor(248, 255, 248),
-                background_end=RGBColor(232, 245, 233),
-                text_primary=RGBColor(27, 94, 32),
-                text_secondary=RGBColor(76, 175, 80),
-                text_light=RGBColor(255, 255, 255)
+                primary='#2e7d32',
+                secondary='#66bb6a',
+                accent='#ffa726',
+                background_start='#f8fff8',
+                background_end='#e8f5e9',
+                text_primary='#1b5e20',
+                text_secondary='#4caf50',
+                text_light='#ffffff'
             ),
             font_scheme=FontScheme(
                 title_font='Segoe UI Semibold',
@@ -214,7 +279,7 @@ class PPTThemes:
             icon_style='creative',
             layout_preference='balanced'
         )
-    
+
     @staticmethod
     def _sunset_warm() -> ThemeConfig:
         """Warm sunset theme with orange and red tones"""
@@ -223,14 +288,14 @@ class PPTThemes:
             display_name='Sunset Warm',
             description='Energetic warm tones inspired by sunset colors',
             color_scheme=ColorScheme(
-                primary=RGBColor(230, 81, 0),       # Deep orange
-                secondary=RGBColor(255, 138, 101),  # Light orange
-                accent=RGBColor(244, 67, 54),       # Red accent
-                background_start=RGBColor(255, 248, 225),
-                background_end=RGBColor(255, 236, 179),
-                text_primary=RGBColor(191, 54, 12),
-                text_secondary=RGBColor(239, 108, 0),
-                text_light=RGBColor(255, 255, 255)
+                primary='#e65100',
+                secondary='#ff8a65',
+                accent='#f44336',
+                background_start='#fff8e1',
+                background_end='#ffecb3',
+                text_primary='#bf360c',
+                text_secondary='#ef6c00',
+                text_light='#ffffff'
             ),
             font_scheme=FontScheme(
                 title_font='Segoe UI',
@@ -244,7 +309,7 @@ class PPTThemes:
             icon_style='modern',
             layout_preference='visual_focused'
         )
-    
+
     @staticmethod
     def _ocean_depths() -> ThemeConfig:
         """Deep ocean theme with blue-teal gradients"""
@@ -253,14 +318,14 @@ class PPTThemes:
             display_name='Ocean Depths',
             description='Deep and calming ocean-inspired blues and teals',
             color_scheme=ColorScheme(
-                primary=RGBColor(0, 77, 64),        # Deep teal
-                secondary=RGBColor(0, 150, 136),    # Teal
-                accent=RGBColor(255, 235, 59),      # Yellow accent
-                background_start=RGBColor(224, 247, 250),
-                background_end=RGBColor(178, 235, 242),
-                text_primary=RGBColor(0, 77, 64),
-                text_secondary=RGBColor(0, 121, 107),
-                text_light=RGBColor(255, 255, 255)
+                primary='#004d40',
+                secondary='#009688',
+                accent='#ffeb3b',
+                background_start='#e0f7fa',
+                background_end='#b2ebf2',
+                text_primary='#004d40',
+                text_secondary='#00796b',
+                text_light='#ffffff'
             ),
             font_scheme=FontScheme(
                 title_font='Segoe UI Light',
@@ -274,7 +339,7 @@ class PPTThemes:
             icon_style='modern',
             layout_preference='balanced'
         )
-    
+
     @staticmethod
     def _royal_purple() -> ThemeConfig:
         """Luxurious royal purple theme"""
@@ -283,14 +348,14 @@ class PPTThemes:
             display_name='Royal Purple',
             description='Luxurious and regal with deep purple and gold combinations',
             color_scheme=ColorScheme(
-                primary=RGBColor(74, 20, 140),      # Deep purple
-                secondary=RGBColor(142, 36, 170),   # Purple
-                accent=RGBColor(255, 193, 7),       # Gold accent
-                background_start=RGBColor(250, 245, 255),
-                background_end=RGBColor(243, 229, 245),
-                text_primary=RGBColor(74, 20, 140),
-                text_secondary=RGBColor(123, 31, 162),
-                text_light=RGBColor(255, 255, 255)
+                primary='#4a148c',
+                secondary='#8e24aa',
+                accent='#ffc107',
+                background_start='#faf5ff',
+                background_end='#f3e5f5',
+                text_primary='#4a148c',
+                text_secondary='#7b1fa2',
+                text_light='#ffffff'
             ),
             font_scheme=FontScheme(
                 title_font='Segoe UI Semibold',
@@ -304,7 +369,7 @@ class PPTThemes:
             icon_style='classic',
             layout_preference='text_heavy'
         )
-    
+
     @staticmethod
     def _minimalist_gray() -> ThemeConfig:
         """Clean minimalist gray theme"""
@@ -313,14 +378,14 @@ class PPTThemes:
             display_name='Minimalist Gray',
             description='Clean and simple design with subtle gray tones',
             color_scheme=ColorScheme(
-                primary=RGBColor(97, 97, 97),       # Medium gray
-                secondary=RGBColor(158, 158, 158),  # Light gray
-                accent=RGBColor(33, 150, 243),      # Blue accent
-                background_start=RGBColor(255, 255, 255),
-                background_end=RGBColor(250, 250, 250),
-                text_primary=RGBColor(33, 33, 33),
-                text_secondary=RGBColor(97, 97, 97),
-                text_light=RGBColor(255, 255, 255)
+                primary='#616161',
+                secondary='#9e9e9e',
+                accent='#2196f3',
+                background_start='#ffffff',
+                background_end='#fafafa',
+                text_primary='#212121',
+                text_secondary='#616161',
+                text_light='#ffffff'
             ),
             font_scheme=FontScheme(
                 title_font='Segoe UI Light',
@@ -334,7 +399,7 @@ class PPTThemes:
             icon_style='minimal',
             layout_preference='text_heavy'
         )
-    
+
     @staticmethod
     def _vibrant_orange() -> ThemeConfig:
         """Energetic vibrant orange theme"""
@@ -343,14 +408,14 @@ class PPTThemes:
             display_name='Vibrant Orange',
             description='Bold and energetic with vibrant orange and complementary colors',
             color_scheme=ColorScheme(
-                primary=RGBColor(230, 81, 0),       # Vibrant orange
-                secondary=RGBColor(255, 138, 101),  # Light orange
-                accent=RGBColor(96, 125, 139),      # Blue gray accent
-                background_start=RGBColor(255, 243, 224),
-                background_end=RGBColor(255, 224, 178),
-                text_primary=RGBColor(191, 54, 12),
-                text_secondary=RGBColor(239, 108, 0),
-                text_light=RGBColor(255, 255, 255)
+                primary='#e65100',
+                secondary='#ff8a65',
+                accent='#607d8b',
+                background_start='#fff3e0',
+                background_end='#ffe0b2',
+                text_primary='#bf360c',
+                text_secondary='#ef6c00',
+                text_light='#ffffff'
             ),
             font_scheme=FontScheme(
                 title_font='Segoe UI',
@@ -364,7 +429,7 @@ class PPTThemes:
             icon_style='modern',
             layout_preference='visual_focused'
         )
-    
+
     @staticmethod
     def _tech_cyber() -> ThemeConfig:
         """Modern tech/cyber theme"""
@@ -373,14 +438,14 @@ class PPTThemes:
             display_name='Tech Cyber',
             description='Futuristic tech theme with neon accents and dark backgrounds',
             color_scheme=ColorScheme(
-                primary=RGBColor(0, 188, 212),      # Cyan
-                secondary=RGBColor(0, 150, 136),    # Teal
-                accent=RGBColor(76, 175, 80),       # Green accent
-                background_start=RGBColor(23, 28, 36),
-                background_end=RGBColor(38, 50, 64),
-                text_primary=RGBColor(224, 247, 250),
-                text_secondary=RGBColor(178, 235, 242),
-                text_light=RGBColor(255, 255, 255)
+                primary='#00bcd4',
+                secondary='#009688',
+                accent='#4caf50',
+                background_start='#171c24',
+                background_end='#263240',
+                text_primary='#e0f7fa',
+                text_secondary='#b2ebf2',
+                text_light='#ffffff'
             ),
             font_scheme=FontScheme(
                 title_font='Segoe UI',
@@ -394,7 +459,7 @@ class PPTThemes:
             icon_style='modern',
             layout_preference='visual_focused'
         )
-    
+
     @staticmethod
     def _classic_academic() -> ThemeConfig:
         """Traditional academic theme"""
@@ -403,14 +468,14 @@ class PPTThemes:
             display_name='Classic Academic',
             description='Traditional academic style with serif fonts and conservative colors',
             color_scheme=ColorScheme(
-                primary=RGBColor(139, 69, 19),      # Saddle brown
-                secondary=RGBColor(205, 133, 63),   # Peru
-                accent=RGBColor(178, 34, 34),       # Fire brick
-                background_start=RGBColor(255, 248, 220),
-                background_end=RGBColor(250, 240, 210),
-                text_primary=RGBColor(101, 67, 33),
-                text_secondary=RGBColor(139, 69, 19),
-                text_light=RGBColor(255, 255, 255)
+                primary='#8b4513',
+                secondary='#cd853f',
+                accent='#b22222',
+                background_start='#fff8dc',
+                background_end='#faf0e6',
+                text_primary='#654321',
+                text_secondary='#8b4513',
+                text_light='#ffffff'
             ),
             font_scheme=FontScheme(
                 title_font='Times New Roman',
@@ -424,7 +489,7 @@ class PPTThemes:
             icon_style='classic',
             layout_preference='text_heavy'
         )
-    
+
     @staticmethod
     def _creative_rainbow() -> ThemeConfig:
         """Creative rainbow theme for artistic presentations"""
@@ -433,14 +498,14 @@ class PPTThemes:
             display_name='Creative Rainbow',
             description='Colorful and creative with rainbow gradients for artistic presentations',
             color_scheme=ColorScheme(
-                primary=RGBColor(156, 39, 176),     # Purple
-                secondary=RGBColor(103, 58, 183),   # Deep purple
-                accent=RGBColor(255, 193, 7),       # Amber
-                background_start=RGBColor(255, 240, 245),
-                background_end=RGBColor(240, 230, 255),
-                text_primary=RGBColor(74, 20, 140),
-                text_secondary=RGBColor(123, 31, 162),
-                text_light=RGBColor(255, 255, 255)
+                primary='#9c27b0',
+                secondary='#673ab7',
+                accent='#ffc107',
+                background_start='#fff0f5',
+                background_end='#f0e6ff',
+                text_primary='#4a148c',
+                text_secondary='#7b1fa2',
+                text_light='#ffffff'
             ),
             font_scheme=FontScheme(
                 title_font='Segoe UI',
@@ -454,7 +519,7 @@ class PPTThemes:
             icon_style='creative',
             layout_preference='visual_focused'
         )
-    
+
     @staticmethod
     def _financial_gold() -> ThemeConfig:
         """Professional financial theme with gold accents"""
@@ -463,14 +528,14 @@ class PPTThemes:
             display_name='Financial Gold',
             description='Professional financial theme with gold and dark blue for business presentations',
             color_scheme=ColorScheme(
-                primary=RGBColor(13, 71, 161),      # Deep blue
-                secondary=RGBColor(25, 118, 210),   # Blue
-                accent=RGBColor(255, 193, 7),       # Gold
-                background_start=RGBColor(250, 250, 250),
-                background_end=RGBColor(245, 245, 245),
-                text_primary=RGBColor(13, 71, 161),
-                text_secondary=RGBColor(25, 118, 210),
-                text_light=RGBColor(255, 255, 255)
+                primary='#0d47a1',
+                secondary='#1976d2',
+                accent='#ffc107',
+                background_start='#fafafa',
+                background_end='#f5f5f5',
+                text_primary='#0d47a1',
+                text_secondary='#1976d2',
+                text_light='#ffffff'
             ),
             font_scheme=FontScheme(
                 title_font='Segoe UI Semibold',
@@ -484,7 +549,7 @@ class PPTThemes:
             icon_style='classic',
             layout_preference='balanced'
         )
-    
+
     @staticmethod
     def _healthcare_mint() -> ThemeConfig:
         """Clean healthcare theme with mint and blue"""
@@ -493,14 +558,14 @@ class PPTThemes:
             display_name='Healthcare Mint',
             description='Clean and trustworthy healthcare theme with mint green and blue tones',
             color_scheme=ColorScheme(
-                primary=RGBColor(0, 121, 107),      # Teal
-                secondary=RGBColor(77, 182, 172),   # Light teal
-                accent=RGBColor(33, 150, 243),      # Blue accent
-                background_start=RGBColor(240, 253, 250),
-                background_end=RGBColor(224, 247, 250),
-                text_primary=RGBColor(0, 77, 64),
-                text_secondary=RGBColor(0, 121, 107),
-                text_light=RGBColor(255, 255, 255)
+                primary='#00796b',
+                secondary='#4db6ac',
+                accent='#2196f3',
+                background_start='#f0fdfa',
+                background_end='#e0f7fa',
+                text_primary='#004d40',
+                text_secondary='#00796b',
+                text_light='#ffffff'
             ),
             font_scheme=FontScheme(
                 title_font='Segoe UI',
@@ -514,7 +579,7 @@ class PPTThemes:
             icon_style='modern',
             layout_preference='balanced'
         )
-    
+
     @staticmethod
     def _startup_energy() -> ThemeConfig:
         """High-energy startup theme"""
@@ -523,14 +588,14 @@ class PPTThemes:
             display_name='Startup Energy',
             description='Dynamic and energetic theme perfect for startup pitches and innovation',
             color_scheme=ColorScheme(
-                primary=RGBColor(244, 67, 54),      # Red
-                secondary=RGBColor(255, 87, 34),    # Deep orange
-                accent=RGBColor(255, 193, 7),       # Amber
-                background_start=RGBColor(255, 245, 238),
-                background_end=RGBColor(255, 224, 178),
-                text_primary=RGBColor(183, 28, 28),
-                text_secondary=RGBColor(244, 67, 54),
-                text_light=RGBColor(255, 255, 255)
+                primary='#f44336',
+                secondary='#ff5722',
+                accent='#ffc107',
+                background_start='#fff5ee',
+                background_end='#ffe0b2',
+                text_primary='#b71c1c',
+                text_secondary='#f44336',
+                text_light='#ffffff'
             ),
             font_scheme=FontScheme(
                 title_font='Segoe UI',
