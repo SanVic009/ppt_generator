@@ -2,8 +2,8 @@ from weasyprint import HTML, CSS
 from weasyprint.formatting_structure import boxes
 
 # Hardcoded paths
-INPUT_HTML = "/home/sanvict/Documents/ppt_generator/backend/temp/html_outputs/20250826_180540_slide4.html"
-OUTPUT_PDF = "22222222.pdf"
+INPUT_HTML = "/home/sanvict/Documents/ppt_generator/backend/temp/html_outputs/20250827_005000_slide1.html"
+OUTPUT_PDF = "backend/temp/asdf.pdf"
 
 # 16:9 aspect ratio PowerPoint dimensions (in mm)
 # 254mm × 143.51mm is equivalent to 10in × 5.65in (standard 16:9 PowerPoint size)

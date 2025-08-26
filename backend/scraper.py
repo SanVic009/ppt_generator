@@ -114,79 +114,79 @@ def scrape_webpage(url, timeout=10):
     except Exception as e:
         return {'url': url, 'status': 'error', 'error': str(e)}
 
-# def display_scraped_content(scraped_data):
-#     """
-#     Display scraped content in a formatted way.
+def display_scraped_content(scraped_data):
+    """
+    Display scraped content in a formatted way.
     
-#     :param scraped_data: Dictionary with scraped content
-#     """
-#     print("=" * 80)
+    :param scraped_data: Dictionary with scraped content
+    """
+    print("=" * 80)
     
-#     if scraped_data['status'] == 'success':
-#         print(f" TITLE: {scraped_data['title']}")
-#         print(f" URL: {scraped_data['url']}")
+    if scraped_data['status'] == 'success':
+        print(f" TITLE: {scraped_data['title']}")
+        print(f" URL: {scraped_data['url']}")
         
-#         if scraped_data['meta_description']:
-#             print(f" META DESCRIPTION: {scraped_data['meta_description']}")
+        if scraped_data['meta_description']:
+            print(f" META DESCRIPTION: {scraped_data['meta_description']}")
         
-#         print("\n CONTENT:")
-#         print("-" * 60)
-#         print(scraped_data['content'])
+        print("\n CONTENT:")
+        print("-" * 60)
+        print(scraped_data['content'])
         
-#     else:
-#         print(f" FAILED TO SCRAPE: {scraped_data['url']}")
-#         print(f" STATUS: {scraped_data['status']}")
-#         print(f"️  ERROR: {scraped_data.get('error', 'Unknown error')}")
+    else:
+        print(f" FAILED TO SCRAPE: {scraped_data['url']}")
+        print(f" STATUS: {scraped_data['status']}")
+        print(f"️  ERROR: {scraped_data.get('error', 'Unknown error')}")
     
-#     print("=" * 80)
-#     print()
+    print("=" * 80)
+    print()
 
-# def main():
-#     """
-#     Main function to search and scrape results.
-#     """
-#     # Get search query from user
-#     if len(sys.argv) > 1:
-#         query = ' '.join(sys.argv[1:])
-#     else:
-#         query = input("Enter search query: ").strip()
-#         if not query:
-#             query = "python ppt generation"  # default query
+def main():
+    """
+    Main function to search and scrape results.
+    """
+    # Get search query from user
+    if len(sys.argv) > 1:
+        query = ' '.join(sys.argv[1:])
+    else:
+        query = input("Enter search query: ").strip()
+        if not query:
+            query = "python ppt generation"  # default query
     
-#     print(f"🔍 Searching for: '{query}'")
-#     print("=" * 80)
+    print(f"🔍 Searching for: '{query}'")
+    print("=" * 80)
     
-#     try:
-#         # Perform search
-#         search_results = google_search(query, num=4)
+    try:
+        # Perform search
+        search_results = google_search(query, num=4)
         
-#         if not search_results:
-#             print("No search results found.")
-#             return
+        if not search_results:
+            print("No search results found.")
+            return
         
-#         print(f"Found {len(search_results)} results. Starting to scrape...\n")
+        print(f"Found {len(search_results)} results. Starting to scrape...\n")
         
-#         # Scrape each result
-#         for i, result in enumerate(search_results, start=1):
-#             print(f"\n SEARCH RESULT #{i}")
-#             print(f" Original Link: {result['link']}")
-#             print(f" Original Title: {result['title']}")
-#             print(f" Snippet: {result['snippet']}")
-#             print()
+        # Scrape each result
+        for i, result in enumerate(search_results, start=1):
+            print(f"\n SEARCH RESULT #{i}")
+            print(f" Original Link: {result['link']}")
+            print(f" Original Title: {result['title']}")
+            print(f" Snippet: {result['snippet']}")
+            print()
             
-#             # Scrape the webpage
-#             scraped_data = scrape_webpage(result['link'])
-#             display_scraped_content(scraped_data)
+            # Scrape the webpage
+            scraped_data = scrape_webpage(result['link'])
+            display_scraped_content(scraped_data)
             
-#             # Add delay between requests to be respectful
-#             if i < len(search_results):
-#                 time.sleep(2)
+            # Add delay between requests to be respectful
+            if i < len(search_results):
+                time.sleep(2)
     
-#     except ValueError as e:
-#         print(f" Configuration Error: {e}")
-#         print("Make sure your .env file contains CUSTOM_SEARCH_API and CSE_ID")
-#     except Exception as e:
-#         print(f" Unexpected Error: {e}")
+    except ValueError as e:
+        print(f" Configuration Error: {e}")
+        print("Make sure your .env file contains CUSTOM_SEARCH_API and CSE_ID")
+    except Exception as e:
+        print(f" Unexpected Error: {e}")
 
-# if __name__ == "__main__":
-#     main()
+if __name__ == "__main__":
+    main()

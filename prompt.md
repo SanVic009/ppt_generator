@@ -124,3 +124,6 @@ use the agents2.py file as a template, add html_ppt_generator agent and change a
 
 
 This is a college in pune. Make the ppt for potential investors to invest in the college or university
+
+
+I want to implement google custom search for content gathering in which it will take the response (which will be a json file response[slides][title]) from the planner agent, and put that title 

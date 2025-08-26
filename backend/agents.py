@@ -107,20 +107,38 @@ class PPTAgents:
             llm=getattr(self, 'model_instance', self.model)  # Fallback to self.model if model_instance isn't available
         )
     
+    def content_researcher_agent(self):
+        """
+        Content Researcher Agent: Searches and analyzes web content to create presentation structure.
+        """
+        return Agent(
+            role='Content Researcher',
+            goal='Research and analyze web content to create well-structured presentation outline',
+            backstory="""You are an expert content researcher and analyst who excels at finding 
+            relevant information and organizing it into meaningful structures. You know how to 
+            identify key themes, extract important concepts, and organize information into a 
+            logical flow. Your expertise lies in understanding complex topics and breaking them 
+            down into clear, manageable sections that will form the basis of a presentation.""",
+            verbose=True,
+            allow_delegation=False,
+            llm=getattr(self, 'model_instance', self.model)
+        )
+
     def planner_agent(self):
         """
-        Planner Agent: Analyzes user requirements and creates a detailed presentation blueprint.
+        Planner Agent: Creates presentation structure based on researched content.
         """
         return Agent(
             role='Presentation Planner',
-            goal='Create a comprehensive presentation blueprint based on user requirements',
-            backstory="""You are an expert presentation strategist with years of experience in creating 
-            compelling presentations. You understand how to structure information effectively, 
-            determine the right content flow, and plan visual elements that enhance the message. 
-            Your expertise lies in breaking down complex topics into digestible slide-by-slide content.""",
+            goal='Analyze researched content and create an engaging presentation structure',
+            backstory="""You are a professional presentation strategist who excels at organizing 
+            information into clear, compelling narratives. You analyze provided research content 
+            to identify key themes and create a logical presentation structure. You know how to 
+            break down complex topics into digestible slides and ensure the presentation flows 
+            naturally while maintaining audience engagement.""",
             verbose=True,
             allow_delegation=False,
-            llm=self.model
+            llm=getattr(self, 'model_instance', self.model)
         )
     
     def content_creator_agent(self):
@@ -169,358 +187,209 @@ class PPTTasks:
     Defines all the tasks that agents will perform in the PPT generation pipeline.
     """
     
-    def planning_task(self, agent, user_prompt, num_slides):
+    def research_task(self, agent, topic, num_slides):
         """
-        Task for the Planner Agent to create a presentation blueprint.
+        Task for the Content Researcher Agent to gather and analyze web content.
+        """
+        return Task(
+            description=f'''
+            Research the topic: "{topic}" and gather comprehensive content for a {num_slides}-slide presentation.
+            
+            Follow these steps:
+            1. Search the topic using Google Custom Search API to find relevant URLs
+            2. Scrape content from the top 10 most relevant URLs
+            3. Analyze the scraped content to identify:
+               - Key themes and concepts
+               - Important facts and statistics
+               - Main arguments or points
+               - Supporting examples
+               - Relevant quotes
+            4. Organize the research into a structured format
+            
+            Output your research as a structured JSON:
+            {{
+                "topic": "Main research topic",
+                "total_sources": "Number of sources scraped",
+                "main_themes": [
+                    {{
+                        "theme": "Identified theme or concept",
+                        "importance_score": 1-10,
+                        "supporting_content": "Content from sources supporting this theme",
+                        "source_urls": ["URLs that mention this theme"]
+                    }}
+                ],
+                "key_facts": [
+                    {{
+                        "fact": "Important fact or statistic",
+                        "context": "Brief context about the fact",
+                        "source_url": "URL where fact was found"
+                    }}
+                ],
+                "quotes": [
+                    {{
+                        "quote": "Notable quote from sources",
+                        "source": "Source name/URL"
+                    }}
+                ],
+                "scraped_content": {{
+                    "url1": "Relevant content from URL1",
+                    "url2": "Relevant content from URL2"
+                }}
+            }}
+            ''',
+            agent=agent,
+            expected_output="A comprehensive JSON containing research data and organized themes"
+        )
+
+    def planning_task(self, agent, research_result, num_slides):
+        """
+        Task for the Planner Agent to create presentation structure from research.
         """
         return Task(
             description=f"""
-            Based on the user request: "{user_prompt}"
-            Create a presentation plan with exactly {num_slides} slides.
-            IMPORTANT RULES:
-            1. Response must be ONLY the JSON object - no explanation text, no markdown formatting
-            2. All text content must be plain text - no markdown, no formatting symbols
-            3. Each slide must have at least title and content_type
-            4. Use appropriate content_type based on the content:
-               - title_only: For section dividers (large centered titles)
-               - bullet_points: For key points and lists
-               - paragraph: For detailed explanations
-               - numbered_list: For steps or processes
-               - two_column: For comparisons
-               - comparison: For pros/cons
-               - image_focus: For visual emphasis
-            - Mix content types for variety (don't make all slides bullet_points)
-            - Use paragraphs for explanations, stories, and detailed concepts
-            - Use bullet_points for key highlights, features, benefits
-            - Use comparison slides for contrasting ideas
-            - Use title_only slides as section breaks for long presentations
-            - Use two_column for showing relationships or parallel concepts
+            Based on the provided research data, create a {num_slides}-slide presentation structure.
             
-            Output your plan as a structured JSON with the following format:
+            Research Data: {research_result}
+            
+            IMPORTANT RULES:
+            1. Response must be ONLY the JSON object - no explanation text
+            2. All text content must be plain text - no markdown
+            3. Each slide must have all required fields
+            4. Slides must be based on the research themes and facts
+            5. Use appropriate content_type based on the research content:
+               - title_only: For section dividers
+               - bullet_points: For key facts and points
+               - paragraph: For detailed explanations
+               - numbered_list: For processes
+               - two_column: For comparisons
+               - quote: For notable quotes
+               - image_focus: For visual topics
+            
+            Output Format:
             {{
-                "presentation_title": "Main presentation title",
-                "presentation_description": "Brief description of the presentation",
+                "presentation_title": "Title based on research topic",
+                "presentation_description": "Overview based on main themes",
                 "total_slides": {num_slides},
                 "slides": [
                     {{
                         "slide_number": 1,
-                        "title": "Slide title",
-                        "description": "What this slide should convey",
-                        "content_type": "bullet_points|paragraph|numbered_list|title_only|two_column|comparison|image_focus",
+                        "title": "Title based on theme",
+                        "subtitle": "Optional subtitle",
+                        "content_type": "slide type",
+                        "description": "Content description",
                         "layout_style": "standard|creative|minimal",
-                        "visual_elements": ["image", "chart", "diagram"] or [],
-                        "key_points": ["point1", "point2", "point3"]
+                        "research_themes": ["Related themes"],
+                        "key_facts": ["Related facts"],
+                        "sources": ["Source URLs"]
                     }}
                 ]
             }}
-            
-            Ensure the presentation has a logical flow, varied slide types, and covers the topic comprehensively.
             """,
             agent=agent,
-            expected_output="A detailed JSON blueprint with varied slide types for the presentation structure"
+            expected_output="A detailed presentation structure based on research data"
         )
     
-    def content_creation_task(self, agent, planning_result):
+    def content_creation_task(self, agent, planning_result, research_data):
         """
-        Task for the Content Creator Agent to generate content for each slide using integrated web research.
+        Task for the Content Creator Agent to generate content for each slide based on research and planning.
         """
-        # Ensure planning_result is properly formatted
+        # Clean up any markdown formatting if needed
         if isinstance(planning_result, str):
             try:
-                # Clean up any markdown formatting
                 planning_result = planning_result.replace('```json\n', '').replace('\n```', '')
             except Exception as e:
                 logger.warning(f"Error cleaning planning result: {e}")
-
-        # Integrated Google Custom Search function
-        def google_search(query, num=4):
-            """
-            Perform a Google Custom Search query using API key and CSE ID from env vars.
-            """
-            try:
-                api_key = os.getenv("CUSTOM_SEARCH_API")
-                cse_id = os.getenv("CSE_ID")
-
-                if not api_key or not cse_id:
-                    logger.error("Missing CUSTOM_SEARCH_API or CSE_ID environment variables")
-                    return []
-
-                url = "https://www.googleapis.com/customsearch/v1"
-                params = {
-                    "q": query,
-                    "key": api_key,
-                    "cx": cse_id,
-                    "num": num,
-                }
-                response = requests.get(url, params=params)
-                results = []
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    for item in data.get("items", []):
-                        results.append({
-                            "title": item["title"],
-                            "link": item["link"],
-                            "snippet": item["snippet"],
-                        })
-                else:
-                    logger.error(f"Google Search API error: {response.status_code} - {response.text}")
-                    
-                return results
-            except Exception as e:
-                logger.error(f"Error in google_search: {str(e)}")
-                return []
-
-        # Integrated web scraping function
-        def scrape_webpage(url, timeout=10):
-            """
-            Scrape content from a webpage.
-            """
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
-            
-            try:
-                logger.info(f"🔍 Scraping: {url}")
-                response = requests.get(url, headers=headers, timeout=timeout)
-                response.raise_for_status()
-                
-                # Parse HTML content
-                soup = BeautifulSoup(response.content, 'html.parser')
-                
-                # Remove script and style elements
-                for script in soup(["script", "style"]):
-                    script.decompose()
-                
-                # Extract basic information
-                title = soup.find('title')
-                title_text = title.get_text().strip() if title else "No title found"
-                
-                # Extract main content (try common content selectors)
-                content_selectors = [
-                    'main', 'article', '.content', '#content', 
-                    '.post-content', '.entry-content', 'div.content'
-                ]
-                
-                content_text = ""
-                for selector in content_selectors:
-                    content_elem = soup.select_one(selector)
-                    if content_elem:
-                        content_text = content_elem.get_text(strip=True, separator=' ')
-                        break
-                
-                # If no specific content area found, get body text
-                if not content_text:
-                    body = soup.find('body')
-                    if body:
-                        content_text = body.get_text(strip=True, separator=' ')
-                
-                # Limit content length for display
-                if len(content_text) > 1000:
-                    content_text = content_text[:1000] + "..."
-                
-                # Extract meta description
-                meta_desc = soup.find('meta', attrs={'name': 'description'})
-                meta_description = meta_desc.get('content', '') if meta_desc else ""
-                
-                return {
-                    'url': url,
-                    'title': title_text,
-                    'meta_description': meta_description,
-                    'content': content_text,
-                    'status': 'success'
-                }
-                
-            except requests.exceptions.Timeout:
-                return {'url': url, 'status': 'timeout', 'error': 'Request timed out'}
-            except requests.exceptions.ConnectionError:
-                return {'url': url, 'status': 'connection_error', 'error': 'Connection failed'}
-            except requests.exceptions.HTTPError as e:
-                return {'url': url, 'status': 'http_error', 'error': f'HTTP {e.response.status_code}'}
-            except Exception as e:
-                return {'url': url, 'status': 'error', 'error': str(e)}
-
-        # Function to get researched content for a slide
-        def get_slide_research(slide_data):
-            title = slide_data.get('title', '')
-            slide_type = slide_data.get('content_type', '')
-            
-            # Perform search with enhanced query
-            search_query = f"{title} {slide_type} information"
-            search_results = google_search(search_query, num=3)
-            
-            researched_content = []
-            for result in search_results:
-                try:
-                    scraped_data = scrape_webpage(result['link'])
-                    if scraped_data['status'] == 'success':
-                        researched_content.append({
-                            'title': scraped_data['title'],
-                            'content': scraped_data['content'],
-                            'description': scraped_data['meta_description'],
-                            'source': result['link']
-                        })
-                    time.sleep(1)  # Rate limiting between scrapes
-                except Exception as e:
-                    logger.error(f"Error scraping {result['link']}: {str(e)}")
-                    continue
-            
-            return {
-                'slide_title': title,
-                'slide_type': slide_type,
-                'research': researched_content
-            }
-
-        # Get research data for all slides
-        try:
-            plan_data = json.loads(planning_result) if isinstance(planning_result, str) else planning_result
-            slides_data = plan_data.get('slides', [])
-            
-            research_data = []
-            for i, slide in enumerate(slides_data):
-                logger.info(f"Researching slide {i+1}: {slide.get('title', 'Untitled')}")
-                research = get_slide_research(slide)
-                research_data.append(research)
-                time.sleep(2)  # Rate limiting between searches
-            
-            research_context = json.dumps(research_data, indent=2)
-        except Exception as e:
-            logger.error(f"Error preparing research data: {str(e)}")
-            research_context = "Error gathering research data"
-                
+        
         return Task(
             description=f"""
-            Based on the presentation blueprint and web research provided, generate detailed and varied content for each slide.
+            Create detailed content for each slide based on the planning structure and research data.
             
-            Blueprint: {planning_result}
+            Planning Structure: {planning_result}
+            Research Data: {research_data}
             
-            Web Research Results: {research_context}
+            IMPORTANT RULES:
+            1. Generate content that directly relates to the research findings
+            2. Use research-backed facts and statistics
+            3. Incorporate relevant quotes when appropriate
+            4. All content must be plain text - no markdown formatting
+            5. Follow slide's content_type requirements:
+               - bullet_points: Short, clear points (max 15 words each)
+               - paragraph: Clear, concise explanations
+               - numbered_list: Sequential steps or points
+               - quote: Use researched quotes with attribution
+               - two_column: Parallel points or comparisons
+               - title_only: Large impactful text
+            6. Include source attribution when using specific facts or quotes
             
-            Your task is to analyze the research data for each slide and create compelling content.
-            Use the researched information to create accurate and informative slides.
-            The output should be a complete JSON with no markdown formatting.
-            
-            CONTENT CREATION RULES:
-            
-            For BULLET_POINTS slides:
-            - Extract 3-5 key points from the research
-            - Make each point concise (8-15 words)
-            - Use action-oriented language
-            - Focus on factual insights from the sources
-            
-            For PARAGRAPH slides:
-            - Write 2-4 well-structured paragraphs based on research
-            - Each paragraph should be 30-60 words
-            - Incorporate key findings from multiple sources
-            - Use proper citations when needed
-            - Keep language clear and professional
-            
-            For TWO_COLUMN slides:
-            - Use research to create contrasting or complementary content
-            - Balance information between columns
-            - Cite sources appropriately
-            
-            IMPORTANT GUIDELINES:
-            1. Use factual information from the research
-            2. Maintain academic integrity by properly attributing information
-            3. Avoid copying text directly - synthesize and rephrase
-            4. Include source links in the notes section
-            5. Keep content focused and relevant to the slide title
-            
-            For NUMBERED_LIST slides:
-            - Create 3-6 sequential steps or ranked items
-            - Each item should be clear and actionable
-            - Use imperative language for processes
-            
-            For COMPARISON slides:
-            - Provide left_points and right_points arrays
-            - Create 3-4 points for each side
-            - Use left_title and right_title fields
-            - Focus on clear contrasts or before/after scenarios
-            
-            For TITLE_ONLY slides:
-            - Just provide a powerful, section-dividing title
-            - No additional content needed
-            
-            For IMAGE_FOCUS slides:
-            - Write descriptive content about the visual concept
-            - Add 2-3 supporting bullet points
-            - Include image_description field
-            
-            IMPORTANT FORMATTING RULES:
-            - Do NOT use markdown formatting (avoid **, *, __, _, ~~, `)
-            - Use plain text only
-            - For emphasis, use capital letters or rephrase the sentence
-            - Write in active voice
-            - Use specific, concrete language
-            - Avoid jargon unless necessary
-            
-            CONTENT VARIETY:
-            - Mix detailed explanations with concise points
-            - Include statistics, examples, and actionable insights
-            - Vary sentence structure and length
-            - Use rhetorical questions where appropriate
-            - Include call-to-action elements
-            
-            Enhance the existing JSON structure by adding content fields:
-            - "content": Main text content (for paragraphs and descriptions)
-            - "bullet_points": Array of bullet points (plain text, no markdown)
-            - "numbered_points": Array for numbered lists (plain text)
-            - "left_content" / "right_content": For two-column layouts
-            - "left_points" / "right_points": For comparison layouts
-            - "left_title" / "right_title": For comparison section headers
-            - "image_description": Description for visual content
-            - "notes": Speaker notes or additional context
-            
-            Example of good content formats:
-            
-            Bullet Points:
-            - "Increase productivity by 40% with automation tools"
-            - "Reduce operational costs through streamlined processes"
-            - "Enhance customer satisfaction with faster response times"
-            
-            Paragraph:
-            "Digital transformation is reshaping how businesses operate in the 21st century. Companies that embrace technology-driven solutions see significant improvements in efficiency and customer engagement. By implementing cloud-based systems and automated workflows, organizations can focus on strategic initiatives rather than routine tasks."
-            
-            Maintain the original structure while enriching it with actual content.
-            The content should be professional, informative, and appropriate for the intended audience.
+            Output Format:
+            {{
+                "slides": [
+                    {{
+                        "slide_number": 1,
+                        "content": {{
+                            "title": "Slide title text",
+                            "subtitle": "Optional subtitle text",
+                            "main_content": "Main slide content formatted according to content_type",
+                            "notes": "Optional speaker notes or context",
+                            "sources": ["Source URLs for facts/quotes used"]
+                        }}
+                    }}
+                ]
+            }}
             """,
             agent=agent,
-            expected_output="Complete JSON with detailed content for all slides, including text, bullet points, and descriptions"
+            expected_output="Detailed slide content based on research and planning"
         )
     
-    def design_task(self, agent, content_result):
+    def design_task(self, agent, content_result, research_data):
         """
-        Task for the Designer Agent to define visual styling and layout.
+        Task for the Designer Agent to define visual styling and layout using research insights.
         """
         return Task(
             description=f"""
-            Based on the content-rich presentation structure provided, define the visual design 
-            and layout for each slide to create a professional and visually appealing presentation.
+            Define the visual design and layout for a research-backed presentation.
             
             Content Structure: {content_result}
+            Research Data: {research_data}
             
-            For each slide, determine:
-            1. Layout type (title slide, content slide, two-column, image-focused, etc.)
-            2. Color scheme and theme
-            3. Font choices and text styling
-            4. Visual element placement and sizing
-            5. Background design and overall aesthetic
-            6. Consistency elements across all slides
+            For each slide:
+            1. Choose layout based on content type and research data
+            2. Determine appropriate visual elements:
+               - Charts/graphs for statistics
+               - Icons for key concepts
+               - Images for visual support
+               - Diagrams for processes
+            3. Create a cohesive visual theme that:
+               - Reflects the topic's domain
+               - Supports data visualization
+               - Enhances content readability
+            4. Define data presentation formats:
+               - Chart types for statistics
+               - Visual hierarchy for facts
+               - Quote styling for citations
+               - Source attribution layouts
             
-            Add design specifications to the JSON structure:
-            - "layout": Layout type for the slide
-            - "color_scheme": Primary and secondary colors
-            - "font_style": Font family and sizing information
-            - "background": Background color or style
-            - "visual_placement": How visual elements should be positioned
-            - "design_notes": Additional styling instructions
+            Add design specifications:
+            - "layout_type": Based on content and research
+            - "visual_elements": {{"type": "chart|image|icon|diagram", "purpose": "data|concept|process"}}
+            - "color_scheme": Primary and accent colors
+            - "typography": Font choices and text hierarchy
+            - "data_visualization": Chart types and formats
+            - "source_styling": Citation and attribution design
             
-            Ensure the design is:
-            - Professional and modern
-            - Consistent across all slides
-            - Appropriate for the content and audience
-            - Visually balanced and easy to read
+            Design Guidelines:
+            1. Academic and Professional:
+               - Clean, data-focused layouts
+               - Clear visual hierarchy
+               - Prominent source attributions
+            2. Research Emphasis:
+               - Highlight key statistics
+               - Visualize data effectively
+               - Clear citation formatting
+            3. Visual Balance:
+               - Content-to-whitespace ratio
+               - Text-to-visual balance
+               - Consistent alignment
             """,
             agent=agent,
             expected_output="Complete JSON with content and comprehensive design specifications"
@@ -544,11 +413,12 @@ class PPTTasks:
             2. Each slide must include:
                - Complete HTML structure (doctype, head, body)
                - Embedded CSS for styling
-               - 16:9 aspect ratio (1920x1080px)
+               - 16:9 aspect ratio
                - Proper font scaling and layout
             3. Maintain consistent styling across all slides
             4. No JavaScript
             5. No extra elements like buttons or navigation
+            6. Follow the aspect ratio. If there is more content, then change the font size according to it
 
             Format your response as a series of HTML code blocks, one for each slide:
 
@@ -580,72 +450,86 @@ class PPTCrew:
     @retry_with_backoff
     def create_presentation(self, topic, style_preferences=None):
         """
-        Create a presentation using multiple AI agents.
+        Create a research-driven presentation using multiple AI agents.
         """
         # Initialize agents
+        researcher = self.agents.content_researcher_agent()
         planner = self.agents.planner_agent()
         content_creator = self.agents.content_creator_agent()
         designer = self.agents.designer_agent()
         generator = self.agents.presentation_generator_agent()
 
-        # Create tasks using the task manager
-        planning_task = self.tasks.planning_task(
-            planner, topic, style_preferences.get('num_slides', 5)
+        num_slides = style_preferences.get('num_slides', 5)
+
+        # Research Phase: Gather and analyze web content
+        research_task = self.tasks.research_task(
+            researcher, topic, num_slides
         )
 
-        content_task = self.tasks.content_creation_task(
-            content_creator, "{planning_result}"  # Will be replaced with actual result
-        )
-        content_task.context = [planning_task]
-
-        design_task = self.tasks.design_task(
-            designer, "{content_result}"  # Will be replaced with actual result
-        )
-        design_task.context = [content_task]
-
-        generation_task = self.tasks.presentation_generation_task(
-            generator, "{design_result}"
-        )
-        generation_task.context = [design_task]
-
-        # Create crew with sequential process and clear task dependencies
         crew = Crew(
-            agents=[planner],  # Start with just the planner
+            agents=[researcher],
+            tasks=[research_task],
+            process=Process.sequential,
+            verbose=True
+        )
+
+        logger.info("Starting research phase...")
+        research_result = crew.kickoff()
+
+        # Planning Phase: Create structure based on research
+        planning_task = self.tasks.planning_task(
+            planner, research_result, num_slides
+        )
+        planning_task.context = [research_task]
+
+        crew = Crew(
+            agents=[planner],
             tasks=[planning_task],
             process=Process.sequential,
-            verbose=True  # Enable verbosity for debugging
+            verbose=True
         )
 
-        # Execute tasks one at a time with proper result handling
         logger.info("Starting planning phase...")
         planning_result = crew.kickoff()
-        
-        # Update content task with planning results and create new crew
-        content_task.description = content_task.description.format(planning_result=planning_result)
+
+        # Content Creation Phase
+        content_task = self.tasks.content_creation_task(
+            content_creator, planning_result, research_result
+        )
+        content_task.context = [planning_task, research_task]
+
         crew = Crew(
             agents=[content_creator],
             tasks=[content_task],
             process=Process.sequential,
             verbose=True
         )
-        
+
         logger.info("Starting content creation phase...")
         content_result = crew.kickoff()
-        
-        # Update design task with content results and create new crew
-        design_task.description = design_task.description.format(content_result=content_result)
+
+        # Design Phase
+        design_task = self.tasks.design_task(
+            designer, content_result, research_result
+        )
+        design_task.context = [content_task, research_task]
+
         crew = Crew(
             agents=[designer],
             tasks=[design_task],
             process=Process.sequential,
             verbose=True
         )
-        
+
         logger.info("Starting design phase...")
         design_result = crew.kickoff()
 
-        # Update generation task with design results and create new crew
-        generation_task.description = generation_task.description.format(design_result=design_result)
+        # Generation Phase
+        generation_task = self.tasks.presentation_generation_task(
+            generator, design_result
+        )
+        generation_task.context = [design_task]
+
         crew = Crew(
             agents=[generator],
             tasks=[generation_task],
