@@ -1,10 +1,12 @@
 import time
 import json
+import os
+import requests
+from bs4 import BeautifulSoup
 import google.generativeai as genai
 from crewai import Agent, Task, Crew, Process
 from config import Config
 import logging
-from scraper import google_search, scrape_webpage
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -13,37 +15,7 @@ logger = logging.getLogger(__name__)
 genai.configure(api_key=Config.GEMINI_API_KEY)
 
 # Generation settings will be applied when creating the model
-DEFAULT_GENERATION_CONFIG =   {
-'''         Based on the design specifications provided, generate separate HTML files for each slide
-            in the presentation.
-
-            Design Specifications: {design_result}
-
-            Create HTML/CSS code for EACH SLIDE SEPARATELY, with consistent styling across all slides.
-            
-            Requirements:
-            1. Generate separate HTML for each slide
-            2. Each slide's HTML should include:
-               - Complete HTML structure (doctype, head, body)
-               - Embedded CSS for that specific slide
-               - 16:9 aspect ratio (1920x1080px)
-               - Proper font scaling and layout
-            3. Keep styling consistent across slides
-            4. No JavaScript
-            5. No extra elements like buttons or navigation
-            
-            Format your response as a series of HTML code blocks, one for each slide:
-            ```html
-            <!-- Slide 1 -->
-            [HTML for slide 1]
-            ```
-            
-            ```html
-            <!-- Slide 2 -->
-            [HTML for slide 2]
-            ```
-            And so on for each slide...rature": 0.7,
-            '''
+DEFAULT_GENERATION_CONFIG = {
     "temperature": 0.7,
     "top_p": 0.8,
     "top_k": 40,
@@ -121,8 +93,6 @@ class PPTAgents:
         """
         Presentation Generator Agent: Creates the final presentation output from the content and design specifications.
         """
-        # Define the tool as a dictionary with the required structure
-
         return Agent(
             role='Presentation Generator',
             goal='Transform the design specifications into a polished, interactive presentation',
@@ -136,6 +106,7 @@ class PPTAgents:
             allow_delegation=False,
             llm=getattr(self, 'model_instance', self.model)  # Fallback to self.model if model_instance isn't available
         )
+    
     def planner_agent(self):
         """
         Planner Agent: Analyzes user requirements and creates a detailed presentation blueprint.
@@ -251,7 +222,7 @@ class PPTTasks:
     
     def content_creation_task(self, agent, planning_result):
         """
-        Task for the Content Creator Agent to generate content for each slide using web research.
+        Task for the Content Creator Agent to generate content for each slide using integrated web research.
         """
         # Ensure planning_result is properly formatted
         if isinstance(planning_result, str):
@@ -261,11 +232,122 @@ class PPTTasks:
             except Exception as e:
                 logger.warning(f"Error cleaning planning result: {e}")
 
+        # Integrated Google Custom Search function
+        def google_search(query, num=4):
+            """
+            Perform a Google Custom Search query using API key and CSE ID from env vars.
+            """
+            try:
+                api_key = os.getenv("CUSTOM_SEARCH_API")
+                cse_id = os.getenv("CSE_ID")
+
+                if not api_key or not cse_id:
+                    logger.error("Missing CUSTOM_SEARCH_API or CSE_ID environment variables")
+                    return []
+
+                url = "https://www.googleapis.com/customsearch/v1"
+                params = {
+                    "q": query,
+                    "key": api_key,
+                    "cx": cse_id,
+                    "num": num,
+                }
+                response = requests.get(url, params=params)
+                results = []
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    for item in data.get("items", []):
+                        results.append({
+                            "title": item["title"],
+                            "link": item["link"],
+                            "snippet": item["snippet"],
+                        })
+                else:
+                    logger.error(f"Google Search API error: {response.status_code} - {response.text}")
+                    
+                return results
+            except Exception as e:
+                logger.error(f"Error in google_search: {str(e)}")
+                return []
+
+        # Integrated web scraping function
+        def scrape_webpage(url, timeout=10):
+            """
+            Scrape content from a webpage.
+            """
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            
+            try:
+                logger.info(f"🔍 Scraping: {url}")
+                response = requests.get(url, headers=headers, timeout=timeout)
+                response.raise_for_status()
+                
+                # Parse HTML content
+                soup = BeautifulSoup(response.content, 'html.parser')
+                
+                # Remove script and style elements
+                for script in soup(["script", "style"]):
+                    script.decompose()
+                
+                # Extract basic information
+                title = soup.find('title')
+                title_text = title.get_text().strip() if title else "No title found"
+                
+                # Extract main content (try common content selectors)
+                content_selectors = [
+                    'main', 'article', '.content', '#content', 
+                    '.post-content', '.entry-content', 'div.content'
+                ]
+                
+                content_text = ""
+                for selector in content_selectors:
+                    content_elem = soup.select_one(selector)
+                    if content_elem:
+                        content_text = content_elem.get_text(strip=True, separator=' ')
+                        break
+                
+                # If no specific content area found, get body text
+                if not content_text:
+                    body = soup.find('body')
+                    if body:
+                        content_text = body.get_text(strip=True, separator=' ')
+                
+                # Limit content length for display
+                if len(content_text) > 1000:
+                    content_text = content_text[:1000] + "..."
+                
+                # Extract meta description
+                meta_desc = soup.find('meta', attrs={'name': 'description'})
+                meta_description = meta_desc.get('content', '') if meta_desc else ""
+                
+                return {
+                    'url': url,
+                    'title': title_text,
+                    'meta_description': meta_description,
+                    'content': content_text,
+                    'status': 'success'
+                }
+                
+            except requests.exceptions.Timeout:
+                return {'url': url, 'status': 'timeout', 'error': 'Request timed out'}
+            except requests.exceptions.ConnectionError:
+                return {'url': url, 'status': 'connection_error', 'error': 'Connection failed'}
+            except requests.exceptions.HTTPError as e:
+                return {'url': url, 'status': 'http_error', 'error': f'HTTP {e.response.status_code}'}
+            except Exception as e:
+                return {'url': url, 'status': 'error', 'error': str(e)}
+
         # Function to get researched content for a slide
         def get_slide_research(slide_data):
             title = slide_data.get('title', '')
             slide_type = slide_data.get('content_type', '')
-            search_results = google_search(title, num=3)
+            
+            # Perform search with enhanced query
+            search_query = f"{title} {slide_type} information"
+            search_results = google_search(search_query, num=3)
             
             researched_content = []
             for result in search_results:
@@ -278,6 +360,7 @@ class PPTTasks:
                             'description': scraped_data['meta_description'],
                             'source': result['link']
                         })
+                    time.sleep(1)  # Rate limiting between scrapes
                 except Exception as e:
                     logger.error(f"Error scraping {result['link']}: {str(e)}")
                     continue
@@ -294,10 +377,11 @@ class PPTTasks:
             slides_data = plan_data.get('slides', [])
             
             research_data = []
-            for slide in slides_data:
+            for i, slide in enumerate(slides_data):
+                logger.info(f"Researching slide {i+1}: {slide.get('title', 'Untitled')}")
                 research = get_slide_research(slide)
                 research_data.append(research)
-                time.sleep(1)  # Rate limiting for API calls
+                time.sleep(2)  # Rate limiting between searches
             
             research_context = json.dumps(research_data, indent=2)
         except Exception as e:
