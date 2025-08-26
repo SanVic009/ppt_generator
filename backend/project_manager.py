@@ -144,7 +144,6 @@ PRESENTATION_TEMPLATE = """
 </html>
 """
 
-
 class PPTProjectManager:
 
     @staticmethod
@@ -197,24 +196,31 @@ class PPTProjectManager:
     def _log_agent_response(project_id: str, agent_name: str, response: str):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-        # Check if the response looks like HTML
-        if response.strip().startswith("```html") or (
-            "<!DOCTYPE html" in response or "<html" in response):
-            # Save HTML content to .html file
+        # Check if the response contains HTML code blocks
+        if "```html" in response or "<!DOCTYPE html" in response or "<html" in response:
+            # Save HTML content to .html files
             html_dir = os.path.join(Config.TEMP_DIR, "html_outputs")
             os.makedirs(html_dir, exist_ok=True)
-            html_file = os.path.join(html_dir, f"{timestamp}.html")
             
-            # Clean the HTML content
-            html_content = response
-            if "```html" in html_content:
-                start = html_content.find("```html") + 7
-                end = html_content.rfind("```")
-                if end != -1:
-                    html_content = html_content[start:end]
+            # Split response into separate HTML code blocks
+            slides = []
+            if "```html" in response:
+                # Split by ```html and ``` markers
+                parts = response.split("```html")
+                for part in parts[1:]:  # Skip first part (before first ```html)
+                    end = part.find("```")
+                    if end != -1:
+                        slides.append(part[:end].strip())
+            else:
+                # Single HTML content
+                slides = [response.strip()]
             
-            with open(html_file, 'w', encoding='utf-8') as f:
-                f.write(html_content.strip())
+            html_files = []
+            for i, slide_content in enumerate(slides, 1):
+                html_file = os.path.join(html_dir, f"{timestamp}_slide{i}.html")
+                with open(html_file, 'w', encoding='utf-8') as f:
+                    f.write(slide_content)
+                html_files.append(html_file)
             logger.info(f"Saved HTML output to {html_file}")
         else:
             # Save non-HTML responses to log file
@@ -419,8 +425,6 @@ class PPTProjectManager:
         
         return content
 
-
-
     def _validate_plan_data(self, plan_data):
         if not isinstance(plan_data, dict):
             return False
@@ -435,6 +439,85 @@ class PPTProjectManager:
         return True
 
     def _create_html_presentation(self, plan_data: dict, project_id: str, theme: ThemeConfig) -> str:
+        """Process and combine separate HTML slides into a PDF presentation"""
+        logger.info(f"Processing HTML slides for theme: {theme.display_name}")
+        
+        html_dir = os.path.join(Config.TEMP_DIR, "html_outputs")
+        
+        # Get the latest set of slides based on timestamp
+        slide_files = sorted([f for f in os.listdir(html_dir) if f.endswith('.html')])
+        if not slide_files:
+            logger.error("No HTML slides found. Falling back to old template method.")
+            return self._create_html_presentation_fallback(plan_data, project_id, theme)
+        
+        # Get the latest timestamp
+        latest_timestamp = slide_files[-1].split('_')[0]
+        slide_files = sorted([f for f in slide_files if f.startswith(latest_timestamp)])
+        
+        logger.info(f"Processing {len(slide_files)} slides from timestamp {latest_timestamp}")
+        
+        # Read and process each slide
+        combined_slides = []
+        for slide_file in slide_files:
+            with open(os.path.join(html_dir, slide_file), 'r', encoding='utf-8') as f:
+                slide_content = f.read().strip()
+                # Extract body content from each slide
+                body_start = slide_content.find('<body')
+                body_end = slide_content.find('</body>')
+                if body_start != -1 and body_end != -1:
+                    body_content = slide_content[body_start:body_end + 7]
+                    combined_slides.append(body_content)
+                else:
+                    combined_slides.append(f'<div class="slide">{slide_content}</div>')
+
+        # Create a complete HTML document with all slides
+        html_content = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presentation - {plan_data.get('presentation_title', 'Generated Presentation')}</title>
+    <style>
+        {theme.get_css()}
+        @page {{ size: 1920px 1080px; margin: 0; }}
+        body {{ 
+            margin: 0; 
+            padding: 0;
+            background-color: {theme.color_scheme.background_start};
+        }}
+        .slide {{ 
+            width: 1920px; 
+            height: 1080px; 
+            margin: 0; 
+            padding: 40px; 
+            box-sizing: border-box;
+            page-break-after: always;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            background-color: {theme.color_scheme.background_start};
+            color: {theme.color_scheme.text};
+        }}
+    </style>
+</head>
+<body>
+    {''.join(combined_slides)}
+</body>
+</html>"""
+
+        # Store the HTML for debugging
+        debug_dir = os.path.join(Config.TEMP_DIR, "debug_html")
+        os.makedirs(debug_dir, exist_ok=True)
+        html_path = os.path.join(debug_dir, f"presentation_{project_id}.html")
+        
+        with open(html_path, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        logger.info(f"Saved combined HTML presentation to: {html_path}")
+        
+        return html_content
+
+    def _create_html_presentation_fallback(self, plan_data: dict, project_id: str, theme: ThemeConfig) -> str:
         """
         Creates an HTML presentation from the plan data and converts it to PDF.
         

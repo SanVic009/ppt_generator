@@ -1,9 +1,10 @@
 import time
+import json
 import google.generativeai as genai
 from crewai import Agent, Task, Crew, Process
-from crewai_tools import tool
 from config import Config
 import logging
+from scraper import google_search, scrape_webpage
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -12,7 +13,37 @@ logger = logging.getLogger(__name__)
 genai.configure(api_key=Config.GEMINI_API_KEY)
 
 # Generation settings will be applied when creating the model
-DEFAULT_GENERATION_CONFIG = {
+DEFAULT_GENERATION_CONFIG =   {
+'''         Based on the design specifications provided, generate separate HTML files for each slide
+            in the presentation.
+
+            Design Specifications: {design_result}
+
+            Create HTML/CSS code for EACH SLIDE SEPARATELY, with consistent styling across all slides.
+            
+            Requirements:
+            1. Generate separate HTML for each slide
+            2. Each slide's HTML should include:
+               - Complete HTML structure (doctype, head, body)
+               - Embedded CSS for that specific slide
+               - 16:9 aspect ratio (1920x1080px)
+               - Proper font scaling and layout
+            3. Keep styling consistent across slides
+            4. No JavaScript
+            5. No extra elements like buttons or navigation
+            
+            Format your response as a series of HTML code blocks, one for each slide:
+            ```html
+            <!-- Slide 1 -->
+            [HTML for slide 1]
+            ```
+            
+            ```html
+            <!-- Slide 2 -->
+            [HTML for slide 2]
+            ```
+            And so on for each slide...rature": 0.7,
+            '''
     "temperature": 0.7,
     "top_p": 0.8,
     "top_k": 40,
@@ -174,25 +205,7 @@ class PPTTasks:
         return Task(
             description=f"""
             Based on the user request: "{user_prompt}"
-            
             Create a presentation plan with exactly {num_slides} slides.
-            
-            Your response MUST be a valid JSON object with this exact structure:
-            {{
-                "presentation_title": "Title of the presentation",
-                "presentation_description": "Brief description of the presentation",
-                "slides": [
-                    {{
-                        "title": "Slide title",
-                        "content_type": "one of: title_only, bullet_points, paragraph, numbered_list, two_column, comparison, image_focus",
-                        "description": "Brief description of the slide's purpose",
-                        "content": "For paragraph type",
-                        "bullet_points": ["Point 1", "Point 2", "Point 3"],  // For bullet_points type
-                        "layout_style": "standard"  // or any specific layout name
-                    }}
-                ]
-            }}
-            
             IMPORTANT RULES:
             1. Response must be ONLY the JSON object - no explanation text, no markdown formatting
             2. All text content must be plain text - no markdown, no formatting symbols
@@ -238,7 +251,7 @@ class PPTTasks:
     
     def content_creation_task(self, agent, planning_result):
         """
-        Task for the Content Creator Agent to generate actual content for each slide.
+        Task for the Content Creator Agent to generate content for each slide using web research.
         """
         # Ensure planning_result is properly formatted
         if isinstance(planning_result, str):
@@ -247,40 +260,93 @@ class PPTTasks:
                 planning_result = planning_result.replace('```json\n', '').replace('\n```', '')
             except Exception as e:
                 logger.warning(f"Error cleaning planning result: {e}")
+
+        # Function to get researched content for a slide
+        def get_slide_research(slide_data):
+            title = slide_data.get('title', '')
+            slide_type = slide_data.get('content_type', '')
+            search_results = google_search(title, num=3)
+            
+            researched_content = []
+            for result in search_results:
+                try:
+                    scraped_data = scrape_webpage(result['link'])
+                    if scraped_data['status'] == 'success':
+                        researched_content.append({
+                            'title': scraped_data['title'],
+                            'content': scraped_data['content'],
+                            'description': scraped_data['meta_description'],
+                            'source': result['link']
+                        })
+                except Exception as e:
+                    logger.error(f"Error scraping {result['link']}: {str(e)}")
+                    continue
+            
+            return {
+                'slide_title': title,
+                'slide_type': slide_type,
+                'research': researched_content
+            }
+
+        # Get research data for all slides
+        try:
+            plan_data = json.loads(planning_result) if isinstance(planning_result, str) else planning_result
+            slides_data = plan_data.get('slides', [])
+            
+            research_data = []
+            for slide in slides_data:
+                research = get_slide_research(slide)
+                research_data.append(research)
+                time.sleep(1)  # Rate limiting for API calls
+            
+            research_context = json.dumps(research_data, indent=2)
+        except Exception as e:
+            logger.error(f"Error preparing research data: {str(e)}")
+            research_context = "Error gathering research data"
                 
         return Task(
             description=f"""
-            Based on the presentation blueprint provided, generate detailed and varied content for each slide.
+            Based on the presentation blueprint and web research provided, generate detailed and varied content for each slide.
             
             Blueprint: {planning_result}
             
-            Your task is to generate complete, detailed content for each slide, including all text,
-            bullet points, and descriptions. The output should be a complete JSON with no markdown formatting.
+            Web Research Results: {research_context}
+            
+            Your task is to analyze the research data for each slide and create compelling content.
+            Use the researched information to create accurate and informative slides.
+            The output should be a complete JSON with no markdown formatting.
             
             CONTENT CREATION RULES:
             
             For BULLET_POINTS slides:
-            - Create 3-5 concise, impactful bullet points
-            - Each point should be 8-15 words maximum
+            - Extract 3-5 key points from the research
+            - Make each point concise (8-15 words)
             - Use action-oriented language
-            - Focus on benefits, features, or key insights
+            - Focus on factual insights from the sources
             
             For PARAGRAPH slides:
-            - Write 2-4 well-structured paragraphs
+            - Write 2-4 well-structured paragraphs based on research
             - Each paragraph should be 30-60 words
-            - Tell a story, explain a concept, or provide detailed analysis
-            - Use engaging, conversational language
-            - Include examples or analogies where helpful
+            - Incorporate key findings from multiple sources
+            - Use proper citations when needed
+            - Keep language clear and professional
+            
+            For TWO_COLUMN slides:
+            - Use research to create contrasting or complementary content
+            - Balance information between columns
+            - Cite sources appropriately
+            
+            IMPORTANT GUIDELINES:
+            1. Use factual information from the research
+            2. Maintain academic integrity by properly attributing information
+            3. Avoid copying text directly - synthesize and rephrase
+            4. Include source links in the notes section
+            5. Keep content focused and relevant to the slide title
             
             For NUMBERED_LIST slides:
             - Create 3-6 sequential steps or ranked items
             - Each item should be clear and actionable
             - Use imperative language for processes
-            
-            For TWO_COLUMN slides:
-            - Provide content for both left_content and right_content
-            - Create complementary or contrasting information
-            - Balance the content length between columns
             
             For COMPARISON slides:
             - Provide left_points and right_points arrays
@@ -382,19 +448,37 @@ class PPTTasks:
         """
         return Task(
             description=f'''
-            Based on the design specifications provided, generate a complete, single HTML file
-            for the presentation.
+            Based on the design specifications provided, generate separate HTML files for each slide.
 
             Design Specifications: {design_result}
 
-            Your task is to create a single HTML file that includes all the necessary HTML, CSS to render the presentations. DO NOT use javascript
+            Your task is to create individual HTML/CSS code for EACH SLIDE SEPARATELY, maintaining
+            consistent styling across all slides.
 
-            Just create the html, css jss code for the presentation and presentation only. Do 
-            not create anything else. The code will be converted into pdf then into ppt so dont 
-            create anything extra such as buttons 
+            Requirements:
+            1. Generate separate HTML code blocks, one for each slide
+            2. Each slide must include:
+               - Complete HTML structure (doctype, head, body)
+               - Embedded CSS for styling
+               - 16:9 aspect ratio (1920x1080px)
+               - Proper font scaling and layout
+            3. Maintain consistent styling across all slides
+            4. No JavaScript
+            5. No extra elements like buttons or navigation
 
-            The final output should be a single HTML code that will eventually be converted into
-            a pdf or a pptx file.
+            Format your response as a series of HTML code blocks, one for each slide:
+
+            ```html
+            <!-- Slide 1 -->
+            [HTML for slide 1]
+            ```
+
+            ```html
+            <!-- Slide 2 -->
+            [HTML for slide 2]
+            ```
+
+            And so on for each slide.
             ''',
             agent=agent,
             expected_output="A single HTML file containing the complete presentation."

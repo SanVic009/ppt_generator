@@ -37,6 +37,7 @@ logs/
 # Generated files
 generated_ppts/
 temp/
+*.pdf
 
 # OS
 .DS_Store
