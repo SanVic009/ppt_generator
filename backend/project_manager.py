@@ -175,6 +175,127 @@ class PPTProjectManager:
         """Get the path where the PDF file should be saved"""
         return os.path.join(Config.GENERATED_PPTS_DIR, f"presentation_{project_id}.pdf")
 
+    def get_response_path(self, project_id: str) -> str:
+        """Get the path where the response JSON file should be saved"""
+        json_path = os.path.join(Config.GENERATED_PPTS_DIR, f"presentation_{project_id}.json")
+        # If JSON doesn't exist, create it from project data
+        if project_id in self.projects and not os.path.exists(json_path):
+            try:
+                with open(json_path, 'w', encoding='utf-8') as f:
+                    json.dump(self.projects[project_id], f, indent=2, default=str)
+            except Exception as e:
+                logger.warning(f"Could not create JSON file for project {project_id}: {e}")
+        return json_path if os.path.exists(json_path) else None
+
+    def list_projects(self):
+        """List all projects with their metadata"""
+        try:
+            projects = []
+            
+            # Check for PDF files in the generated_ppts directory
+            for filename in os.listdir(Config.GENERATED_PPTS_DIR):
+                if filename.endswith('.pdf') and filename.startswith('presentation_'):
+                    # Extract project ID from filename
+                    project_id = filename.replace('presentation_', '').replace('.pdf', '')
+                    
+                    pdf_path = os.path.join(Config.GENERATED_PPTS_DIR, filename)
+                    json_path = os.path.join(Config.GENERATED_PPTS_DIR, f"presentation_{project_id}.json")
+                    
+                    # Skip empty PDF files
+                    if os.path.getsize(pdf_path) == 0:
+                        continue
+                    
+                    project_info = {
+                        'id': project_id,
+                        'created_at': datetime.fromtimestamp(os.path.getctime(pdf_path)).isoformat(),
+                        'pdf_size': os.path.getsize(pdf_path),
+                        'status': 'completed'
+                    }
+                    
+                    # Try to load additional metadata from JSON file
+                    if os.path.exists(json_path):
+                        try:
+                            with open(json_path, 'r', encoding='utf-8') as f:
+                                json_data = json.load(f)
+                                project_info.update({
+                                    'topic': json_data.get('topic', json_data.get('title', 'Untitled')),
+                                    'title': json_data.get('title', json_data.get('topic', 'Untitled')),
+                                    'description': json_data.get('description', ''),
+                                    'num_slides': json_data.get('num_slides', len(json_data.get('slides', []))),
+                                    'theme': json_data.get('theme', 'corporate_blue'),
+                                    'theme_color': json_data.get('theme_color', '#3b82f6')
+                                })
+                        except Exception as e:
+                            logger.warning(f"Could not load metadata for project {project_id}: {e}")
+                            project_info.update({
+                                'topic': f'Presentation {project_id}',
+                                'title': f'Presentation {project_id}',
+                                'description': 'Generated presentation',
+                                'num_slides': 5,
+                                'theme': 'corporate_blue',
+                                'theme_color': '#3b82f6'
+                            })
+                    else:
+                        # Use defaults if no JSON file
+                        project_info.update({
+                            'topic': f'Presentation {project_id}',
+                            'title': f'Presentation {project_id}',
+                            'description': 'Generated presentation',
+                            'num_slides': 5,
+                            'theme': 'corporate_blue',
+                            'theme_color': '#3b82f6'
+                        })
+                    
+                    projects.append(project_info)
+            
+            # Sort by creation date (newest first)
+            projects.sort(key=lambda x: x['created_at'], reverse=True)
+            
+            logger.info(f"Listed {len(projects)} projects")
+            return projects
+            
+        except Exception as e:
+            logger.error(f"Error listing projects: {e}")
+            raise
+
+    def delete_project(self, project_id: str):
+        """Delete a project and its associated files"""
+        try:
+            deleted = False
+            
+            # Delete PDF file
+            pdf_path = self.get_pdf_path(project_id)
+            if os.path.exists(pdf_path):
+                os.remove(pdf_path)
+                deleted = True
+                logger.info(f"Deleted PDF: {pdf_path}")
+            
+            # Delete JSON file
+            json_path = os.path.join(Config.GENERATED_PPTS_DIR, f"presentation_{project_id}.json")
+            if os.path.exists(json_path):
+                os.remove(json_path)
+                deleted = True
+                logger.info(f"Deleted JSON: {json_path}")
+            
+            # Remove from memory
+            if project_id in self.projects:
+                del self.projects[project_id]
+                deleted = True
+            
+            # Delete project folder if it exists
+            project_folder = os.path.join(Config.TEMP_DIR, project_id)
+            if os.path.exists(project_folder):
+                import shutil
+                shutil.rmtree(project_folder)
+                deleted = True
+                logger.info(f"Deleted project folder: {project_folder}")
+            
+            return deleted
+            
+        except Exception as e:
+            logger.error(f"Error deleting project {project_id}: {e}")
+            return False
+
     def _load_project_states(self):
         try:
             if os.path.exists(self.state_file):
@@ -198,9 +319,9 @@ class PPTProjectManager:
         
         # Check if the response contains HTML code blocks
         if "```html" in response or "<!DOCTYPE html" in response or "<html" in response:
-            # Save HTML content to .html files
-            html_dir = os.path.join(Config.TEMP_DIR, "html_outputs")
-            os.makedirs(html_dir, exist_ok=True)
+            # Create timestamp folder for this project
+            html_project_dir = os.path.join(Config.HTML_OUTPUTS_DIR, project_id)
+            os.makedirs(html_project_dir, exist_ok=True)
             
             # Split response into separate HTML code blocks
             slides = []
@@ -217,11 +338,11 @@ class PPTProjectManager:
             
             html_files = []
             for i, slide_content in enumerate(slides, 1):
-                html_file = os.path.join(html_dir, f"{timestamp}_slide{i}.html")
+                html_file = os.path.join(html_project_dir, f"slide{i}.html")
                 with open(html_file, 'w', encoding='utf-8') as f:
                     f.write(slide_content)
                 html_files.append(html_file)
-            logger.info(f"Saved HTML output to {html_file}")
+            logger.info(f"Saved {len(slides)} HTML slides to {html_project_dir}")
         else:
             # Save non-HTML responses to log file
             log_dir = Config.TEMP_DIR
@@ -239,15 +360,17 @@ class PPTProjectManager:
             project_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         try:
+            logger.info(f"🎯 STARTING PRESENTATION GENERATION FOR TOPIC: '{user_prompt}'")
+            
             self.projects[project_id] = {
                 'id': project_id, 'prompt': user_prompt, 'num_slides': num_slides,
                 'theme_name': theme_name, 'status': 'started',
                 'created_at': datetime.now().isoformat(), 'stages': []
             }
             
-            self.emit_progress(project_id, 'initialization', 'Starting presentation generation...')
+            self.emit_progress(project_id, 'initialization', f'Starting presentation generation for: {user_prompt}')
             
-            self.emit_progress(project_id, 'planning', 'AI agents are working on your presentation...')
+            self.emit_progress(project_id, 'planning', f'AI agents researching: {user_prompt}')
             
             # Create presentation with the required arguments
             style_prefs = {
@@ -255,13 +378,16 @@ class PPTProjectManager:
                 'project_id': project_id,
                 'theme': theme_name
             }
+            
+            logger.info(f"🤖 Calling AI agents to research and create presentation about: '{user_prompt}'")
             presentation_plan = self.crew.create_presentation(
                 topic=user_prompt,
                 style_preferences=style_prefs
             )
             
+            logger.info(f"✅ AI agents completed. Processing results for topic: '{user_prompt}'")
             PPTProjectManager._log_agent_response(project_id, "Presentation Generator", str(presentation_plan))
-            self.emit_progress(project_id, 'generation', 'AI generation complete, processing results...')
+            self.emit_progress(project_id, 'generation', f'AI generation complete for: {user_prompt}, processing results...')
 
             theme = PPTThemes.get_theme(theme_name)
             if not theme:
@@ -442,62 +568,145 @@ class PPTProjectManager:
         """Process and combine separate HTML slides into a PDF presentation"""
         logger.info(f"Processing HTML slides for theme: {theme.display_name}")
         
-        html_dir = os.path.join(Config.TEMP_DIR, "html_outputs")
+        # Check for project-specific HTML slides first
+        html_project_dir = os.path.join(Config.HTML_OUTPUTS_DIR, project_id)
         
-        # Get the latest set of slides based on timestamp
-        slide_files = sorted([f for f in os.listdir(html_dir) if f.endswith('.html')])
-        if not slide_files:
-            logger.error("No HTML slides found. Falling back to old template method.")
-            return self._create_html_presentation_fallback(plan_data, project_id, theme)
-        
-        # Get the latest timestamp
-        latest_timestamp = slide_files[-1].split('_')[0]
-        slide_files = sorted([f for f in slide_files if f.startswith(latest_timestamp)])
-        
-        logger.info(f"Processing {len(slide_files)} slides from timestamp {latest_timestamp}")
-        
-        # Read and process each slide
-        combined_slides = []
-        for slide_file in slide_files:
-            with open(os.path.join(html_dir, slide_file), 'r', encoding='utf-8') as f:
-                slide_content = f.read().strip()
-                # Extract body content from each slide
-                body_start = slide_content.find('<body')
-                body_end = slide_content.find('</body>')
-                if body_start != -1 and body_end != -1:
-                    body_content = slide_content[body_start:body_end + 7]
-                    combined_slides.append(body_content)
-                else:
-                    combined_slides.append(f'<div class="slide">{slide_content}</div>')
-
-        # Create a complete HTML document with all slides
-        html_content = f"""
-<!DOCTYPE html>
+        if os.path.exists(html_project_dir):
+            slide_files = sorted([f for f in os.listdir(html_project_dir) if f.startswith('slide') and f.endswith('.html')])
+            
+            if slide_files:
+                logger.info(f"Found {len(slide_files)} slide files in project directory")
+                combined_slides = []
+                
+                for slide_file in slide_files:
+                    slide_path = os.path.join(html_project_dir, slide_file)
+                    with open(slide_path, 'r', encoding='utf-8') as f:
+                        slide_content = f.read().strip()
+                        
+                        # Wrap each slide in a page container for proper PDF pagination
+                        slide_wrapped = f"""
+                        <div class="slide-page" style="
+                            width: 1920px; 
+                            height: 1080px; 
+                            page-break-after: always; 
+                            box-sizing: border-box;
+                            padding: 40px;
+                            display: flex;
+                            flex-direction: column;
+                            justify-content: center;
+                            background: {theme.color_scheme.background_start};
+                            color: {theme.color_scheme.text_primary};
+                            font-family: {theme.font_scheme.title_font};
+                            position: relative;
+                            overflow: hidden;
+                        ">
+                            {slide_content}
+                        </div>
+                        """
+                        combined_slides.append(slide_wrapped)
+                
+                # Create complete HTML document with proper PDF styling
+                html_content = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Presentation - {plan_data.get('presentation_title', 'Generated Presentation')}</title>
+    <title>{plan_data.get('presentation_title', 'Generated Presentation')}</title>
     <style>
         {theme.get_css()}
-        @page {{ size: 1920px 1080px; margin: 0; }}
-        body {{ 
-            margin: 0; 
-            padding: 0;
-            background-color: {theme.color_scheme.background_start};
+        
+        @page {{
+            size: 1920px 1080px;
+            margin: 0;
         }}
-        .slide {{ 
-            width: 1920px; 
-            height: 1080px; 
-            margin: 0; 
-            padding: 40px; 
+        
+        * {{
             box-sizing: border-box;
-            page-break-after: always;
+        }}
+        
+        html, body {{
+            margin: 0;
+            padding: 0;
+            width: 1920px;
+            font-family: {theme.font_scheme.title_font};
+            line-height: 1.6;
+        }}
+        
+        .slide-page:last-child {{
+            page-break-after: auto;
+        }}
+        
+        /* Enhanced styling for better visual presentation */
+        h1, h2, h3, h4, h5, h6 {{
+            font-family: {theme.font_scheme.title_font};
+            font-weight: bold;
+            margin-bottom: 20px;
+            color: {theme.color_scheme.primary};
+        }}
+        
+        h1 {{ font-size: 3.5rem; }}
+        h2 {{ font-size: 2.8rem; }}
+        h3 {{ font-size: 2.2rem; }}
+        
+        p {{
+            font-size: 1.5rem;
+            margin-bottom: 15px;
+            line-height: 1.6;
+        }}
+        
+        ul, ol {{
+            font-size: 1.4rem;
+            margin-left: 30px;
+            margin-bottom: 20px;
+        }}
+        
+        li {{
+            margin-bottom: 10px;
+            line-height: 1.5;
+        }}
+        
+        .highlight {{
+            background: linear-gradient(120deg, {theme.color_scheme.accent}, {theme.color_scheme.secondary});
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            display: inline-block;
+        }}
+        
+        .card {{
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 15px;
+            padding: 30px;
+            margin: 20px 0;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            border-left: 5px solid {theme.color_scheme.accent};
+        }}
+        
+        .center {{
+            text-align: center;
             display: flex;
             flex-direction: column;
             justify-content: center;
-            background-color: {theme.color_scheme.background_start};
-            color: {theme.color_scheme.text};
+            align-items: center;
+            height: 100%;
+        }}
+        
+        .two-column {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            height: 100%;
+            align-items: center;
+        }}
+        
+        .visual-element {{
+            display: inline-block;
+            background: {theme.color_scheme.accent};
+            color: white;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 1.2rem;
+            margin: 5px;
         }}
     </style>
 </head>
@@ -505,17 +714,22 @@ class PPTProjectManager:
     {''.join(combined_slides)}
 </body>
 </html>"""
-
-        # Store the HTML for debugging
-        debug_dir = os.path.join(Config.TEMP_DIR, "debug_html")
-        os.makedirs(debug_dir, exist_ok=True)
-        html_path = os.path.join(debug_dir, f"presentation_{project_id}.html")
+                
+                # Store the HTML for debugging
+                debug_dir = os.path.join(Config.TEMP_DIR, "debug_html")
+                os.makedirs(debug_dir, exist_ok=True)
+                html_path = os.path.join(debug_dir, f"presentation_{project_id}.html")
+                
+                with open(html_path, 'w', encoding='utf-8') as f:
+                    f.write(html_content)
+                logger.info(f"Saved combined HTML presentation to: {html_path}")
+                
+                # Generate PDF from the combined HTML
+                return self._generate_pdf_from_html(project_id, html_content)
         
-        with open(html_path, 'w', encoding='utf-8') as f:
-            f.write(html_content)
-        logger.info(f"Saved combined HTML presentation to: {html_path}")
-        
-        return html_content
+        # Fallback to old method if no project-specific slides found
+        logger.warning("No project-specific slides found, using fallback method")
+        return self._create_html_presentation_fallback(plan_data, project_id, theme)
 
     def _create_html_presentation_fallback(self, plan_data: dict, project_id: str, theme: ThemeConfig) -> str:
         """
@@ -624,16 +838,81 @@ class PPTProjectManager:
         theme = PPTThemes.get_theme(theme_name)
         theme_css = theme.get_css() if theme else ""
 
+        # Enhanced PDF CSS for 16:9 aspect ratio (1920x1080px) with better visual quality
         pdf_css = f"""
-        @page {{ size: 1920px 1080px; margin: 0; }}
-        html, body {{ width: 1920px; height: 1080px; margin: 0; padding: 0;
-                    background: {theme.color_scheme.background_start if theme else '#ffffff'}; }}
-        /* Match the actual markup emitted by PRESENTATION_TEMPLATE */
-        .slides section {{ break-after: page; }}
+        @page {{ 
+            size: 1920px 1080px; 
+            margin: 0; 
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }}
+        
+        html, body {{ 
+            width: 1920px; 
+            height: 1080px; 
+            margin: 0; 
+            padding: 0;
+            background: {theme.color_scheme.background_start if theme else '#ffffff'}; 
+            font-family: {theme.font_scheme.title_font if theme else 'Arial, sans-serif'};
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }}
+        
+        .slide-page {{ 
+            break-after: page; 
+            width: 1920px;
+            height: 1080px;
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+        }}
+        
+        .slide-page:last-child {{
+            break-after: auto;
+        }}
+        
+        /* Ensure proper text rendering */
+        * {{
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }}
+        
+        /* Enhanced typography for PDF */
+        h1, h2, h3, h4, h5, h6 {{
+            font-weight: bold;
+            text-rendering: optimizeLegibility;
+            line-height: 1.2;
+        }}
+        
+        p, li {{
+            text-rendering: optimizeLegibility;
+            line-height: 1.5;
+        }}
+        
+        /* Preserve background colors and gradients */
+        .highlight, .card, .visual-element {{
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }}
         """
 
         output_path = os.path.join(Config.GENERATED_PPTS_DIR, f"presentation_{project_id}.pdf")
-        HTML(string=html_content, base_url=os.getcwd()).write_pdf(
-            output_path, stylesheets=[CSS(string=theme_css + pdf_css)]
-        )
-        return output_path
+        
+        try:
+            HTML(string=html_content, base_url=os.getcwd()).write_pdf(
+                output_path, 
+                stylesheets=[CSS(string=theme_css + pdf_css)],
+                presentational_hints=True,
+                optimize_images=True
+            )
+            logger.info(f"Successfully generated PDF at: {output_path}")
+            return output_path
+        except Exception as e:
+            logger.error(f"Error generating PDF: {str(e)}")
+            raise

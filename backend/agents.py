@@ -6,6 +6,7 @@ from bs4 import BeautifulSoup
 import google.generativeai as genai
 from crewai import Agent, Task, Crew, Process
 from config import Config
+from scraper import google_search, scrape_webpage
 import logging
 
 # Configure logging
@@ -66,6 +67,60 @@ def retry_with_backoff(func, max_retries=None, delay=None, backoff=None):
     
     return wrapper
 
+# Research functions for the Content Researcher Agent
+def search_web_func(query: str) -> str:
+    """Search the web using Google Custom Search API for a given query."""
+    try:
+        logger.info(f"🔍 Searching web for: {query}")
+        results = google_search(query, num=8)
+        logger.info(f"✅ Found {len(results)} search results for: {query}")
+        return json.dumps({
+            "query": query,
+            "results": results,
+            "total_found": len(results)
+        }, indent=2)
+    except Exception as e:
+        logger.error(f"❌ Web search error for '{query}': {e}")
+        # Return mock data if API fails - but clearly indicate it's mock data
+        return json.dumps({
+            "query": query,
+            "error": str(e),
+            "results": [],
+            "note": "Search API not available, using topic-based content generation"
+        })
+
+def scrape_content_func(url: str) -> str:
+    """Scrape content from a webpage URL."""
+    try:
+        logger.info(f"📄 Scraping content from: {url}")
+        result = scrape_webpage(url)
+        logger.info(f"✅ Successfully scraped content from: {url}")
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        logger.error(f"❌ Scraping error for {url}: {e}")
+        return json.dumps({"error": str(e), "url": url, "content": ""})
+
+def analyze_topic_func(topic: str) -> str:
+    """Analyze a topic and generate relevant research points when web search is not available."""
+    logger.info(f"🧠 Analyzing topic: {topic}")
+    
+    # Create topic-specific research structure
+    analysis = {
+        "topic": topic,
+        "analysis_method": "AI-based topic analysis",
+        "suggested_research_areas": [
+            f"Background and history of {topic}",
+            f"Key achievements and milestones related to {topic}",
+            f"Current status and recent developments about {topic}",
+            f"Impact and significance of {topic}",
+            f"Future outlook and implications of {topic}"
+        ],
+        "content_focus": f"Generate content specifically about '{topic}' and not generic presentation advice"
+    }
+    
+    logger.info(f"✅ Topic analysis completed for: {topic}")
+    return json.dumps(analysis, indent=2)
+
 class PPTAgents:
     """
     Defines all the AI agents for PPT generation using CrewAI framework.
@@ -113,12 +168,14 @@ class PPTAgents:
         """
         return Agent(
             role='Content Researcher',
-            goal='Research and analyze web content to create well-structured presentation outline',
-            backstory="""You are an expert content researcher and analyst who excels at finding 
-            relevant information and organizing it into meaningful structures. You know how to 
-            identify key themes, extract important concepts, and organize information into a 
-            logical flow. Your expertise lies in understanding complex topics and breaking them 
-            down into clear, manageable sections that will form the basis of a presentation.""",
+            goal=f'Research and gather specific information about the given topic, not generic presentation advice',
+            backstory="""You are an expert content researcher who specializes in gathering specific 
+            information about requested topics. You MUST focus on the exact topic provided by the user 
+            and gather real, factual information about that specific subject. You have access to web 
+            search capabilities to find current, relevant information. Your job is to research the 
+            SPECIFIC TOPIC requested, not to provide generic presentation advice or unrelated content. 
+            You ALWAYS start by analyzing the exact topic requested and gathering relevant facts and 
+            information about that specific subject.""",
             verbose=True,
             allow_delegation=False,
             llm=getattr(self, 'model_instance', self.model)
@@ -191,154 +248,183 @@ class PPTTasks:
         """
         Task for the Content Researcher Agent to gather and analyze web content.
         """
+        # Ensure num_slides is an integer
+        num_slides = int(num_slides) if isinstance(num_slides, str) else num_slides
+        
         return Task(
             description=f'''
-            Research the topic: "{topic}" and gather comprehensive content for a {num_slides}-slide presentation.
+            CRITICAL MISSION: Research and gather specific information about "{topic}" ONLY.
             
-            Follow these steps:
-            1. Search the topic using Google Custom Search API to find relevant URLs
-            2. Scrape content from the top 10 most relevant URLs
-            3. Analyze the scraped content to identify:
-               - Key themes and concepts
-               - Important facts and statistics
-               - Main arguments or points
-               - Supporting examples
-               - Relevant quotes
-            4. Organize the research into a structured format
+            You are researching: "{topic}"
+            Target slides: {num_slides}
             
-            Output your research as a structured JSON:
+            MANDATORY REQUIREMENTS:
+            1. Focus EXCLUSIVELY on "{topic}" - this is your research subject
+            2. Do NOT research "presentation skills", "how to present", or "presentation tips"
+            3. Research factual information, background, and key details about "{topic}"
+            4. Gather current information and recent developments about "{topic}"
+            5. Find key facts, achievements, and significance of "{topic}"
+            
+            RESEARCH AREAS FOR "{topic}":
+            - Background and history of {topic}
+            - Key facts and information about {topic}
+            - Recent developments and current status of {topic}
+            - Achievements and milestones related to {topic}
+            - Impact and significance of {topic}
+            - Notable quotes or statements about {topic}
+            
+            OUTPUT STRUCTURE (JSON format):
             {{
-                "topic": "Main research topic",
-                "total_sources": "Number of sources scraped",
+                "researched_topic": "{topic}",
+                "research_focus": "Specific information about {topic}",
+                "research_method": "Topic analysis and fact gathering",
                 "main_themes": [
                     {{
-                        "theme": "Identified theme or concept",
-                        "importance_score": 1-10,
-                        "supporting_content": "Content from sources supporting this theme",
-                        "source_urls": ["URLs that mention this theme"]
+                        "theme": "Background of {topic}",
+                        "importance": 9,
+                        "content": "Historical background and origin of {topic}",
+                        "key_points": ["Specific facts about {topic}"]
+                    }},
+                    {{
+                        "theme": "Key achievements of {topic}",
+                        "importance": 8,
+                        "content": "Major accomplishments and milestones of {topic}",
+                        "key_points": ["Notable achievements of {topic}"]
+                    }},
+                    {{
+                        "theme": "Current status of {topic}",
+                        "importance": 8,
+                        "content": "Recent developments and current situation of {topic}",
+                        "key_points": ["Current facts about {topic}"]
+                    }},
+                    {{
+                        "theme": "Impact of {topic}",
+                        "importance": 7,
+                        "content": "Significance and influence of {topic}",
+                        "key_points": ["Impact areas of {topic}"]
                     }}
                 ],
                 "key_facts": [
                     {{
-                        "fact": "Important fact or statistic",
-                        "context": "Brief context about the fact",
-                        "source_url": "URL where fact was found"
+                        "fact": "Specific factual information about {topic}",
+                        "context": "Context about this aspect of {topic}",
+                        "relevance": "Why this fact is important for understanding {topic}"
                     }}
                 ],
-                "quotes": [
-                    {{
-                        "quote": "Notable quote from sources",
-                        "source": "Source name/URL"
-                    }}
-                ],
-                "scraped_content": {{
-                    "url1": "Relevant content from URL1",
-                    "url2": "Relevant content from URL2"
-                }}
+                "suggested_slide_topics": [
+                    "Introduction to {topic}",
+                    "Background and History of {topic}",
+                    "Key Achievements of {topic}",
+                    "Current Status of {topic}",
+                    "Impact and Legacy of {topic}"
+                ]
             }}
+            
+            CRITICAL: Your research must be about "{topic}" specifically. Do not generate content about presentations, public speaking, or communication skills.
             ''',
             agent=agent,
-            expected_output="A comprehensive JSON containing research data and organized themes"
+            expected_output=f"Comprehensive factual research specifically about '{topic}'"
         )
 
     def planning_task(self, agent, research_result, num_slides):
         """
         Task for the Planner Agent to create presentation structure from research.
         """
+        # Ensure num_slides is an integer
+        num_slides = int(num_slides) if isinstance(num_slides, str) else num_slides
+        
         return Task(
             description=f"""
-            Based on the provided research data, create a {num_slides}-slide presentation structure.
+            Create a {num_slides}-slide presentation structure based ONLY on the research data provided.
             
             Research Data: {research_result}
             
-            IMPORTANT RULES:
-            1. Response must be ONLY the JSON object - no explanation text
-            2. All text content must be plain text - no markdown
-            3. Each slide must have all required fields
-            4. Slides must be based on the research themes and facts
-            5. Use appropriate content_type based on the research content:
-               - title_only: For section dividers
-               - bullet_points: For key facts and points
-               - paragraph: For detailed explanations
-               - numbered_list: For processes
-               - two_column: For comparisons
-               - quote: For notable quotes
-               - image_focus: For visual topics
+            CRITICAL RULES:
+            1. Use ONLY the topic and information from the research data
+            2. Do NOT add generic presentation advice
+            3. Create slides specifically about the researched topic
+            4. Base slide titles and content on the research themes and facts
+            5. Each slide must relate to the specific topic researched
             
-            Output Format:
+            Slide Distribution Strategy:
+            - Slide 1: Introduction to the specific topic
+            - Slides 2-{num_slides-1}: Main themes/aspects from research
+            - Slide {num_slides}: Conclusion/summary of the topic
+            
+            Output Format (JSON ONLY):
             {{
-                "presentation_title": "Title based on research topic",
-                "presentation_description": "Overview based on main themes",
+                "presentation_title": "Title based on researched topic",
+                "presentation_description": "Description of the specific topic",
+                "target_topic": "The exact topic researched",
                 "total_slides": {num_slides},
                 "slides": [
                     {{
                         "slide_number": 1,
-                        "title": "Title based on theme",
-                        "subtitle": "Optional subtitle",
-                        "content_type": "slide type",
-                        "description": "Content description",
-                        "layout_style": "standard|creative|minimal",
-                        "research_themes": ["Related themes"],
-                        "key_facts": ["Related facts"],
-                        "sources": ["Source URLs"]
+                        "title": "Title based on research theme",
+                        "subtitle": "Subtitle related to the topic",
+                        "content_type": "title_only|bullet_points|paragraph|two_column",
+                        "description": "What this slide covers about the topic",
+                        "research_theme": "Which research theme this slide covers",
+                        "key_points": ["Points from research data"],
+                        "sources": ["Sources from research"]
                     }}
                 ]
             }}
             """,
             agent=agent,
-            expected_output="A detailed presentation structure based on research data"
+            expected_output="Presentation structure based ONLY on the researched topic"
         )
     
     def content_creation_task(self, agent, planning_result, research_data):
         """
         Task for the Content Creator Agent to generate content for each slide based on research and planning.
         """
-        # Clean up any markdown formatting if needed
-        if isinstance(planning_result, str):
-            try:
-                planning_result = planning_result.replace('```json\n', '').replace('\n```', '')
-            except Exception as e:
-                logger.warning(f"Error cleaning planning result: {e}")
-        
         return Task(
             description=f"""
-            Create detailed content for each slide based on the planning structure and research data.
+            Generate specific content for each slide using ONLY the research data and planning structure provided.
             
             Planning Structure: {planning_result}
             Research Data: {research_data}
             
-            IMPORTANT RULES:
-            1. Generate content that directly relates to the research findings
-            2. Use research-backed facts and statistics
-            3. Incorporate relevant quotes when appropriate
-            4. All content must be plain text - no markdown formatting
-            5. Follow slide's content_type requirements:
-               - bullet_points: Short, clear points (max 15 words each)
-               - paragraph: Clear, concise explanations
-               - numbered_list: Sequential steps or points
-               - quote: Use researched quotes with attribution
-               - two_column: Parallel points or comparisons
-               - title_only: Large impactful text
-            6. Include source attribution when using specific facts or quotes
+            STRICT CONTENT RULES:
+            1. Use ONLY information from the research data provided
+            2. Do NOT create generic presentation advice or tips
+            3. Focus on the specific topic that was researched
+            4. Each slide must contain factual information about the topic
+            5. Use research themes, facts, and sources provided
+            6. Content must be plain text - NO markdown formatting
             
-            Output Format:
+            For each slide, create content that:
+            - Relates directly to the researched topic
+            - Uses facts and themes from the research data
+            - Includes specific information, not generic advice
+            - Cites sources when using specific facts
+            
+            Content Types:
+            - bullet_points: Use research facts as bullet points
+            - paragraph: Write paragraphs using research information
+            - title_only: Create impactful titles about the topic
+            - two_column: Compare aspects from research data
+            
+            Output Format (JSON):
             {{
+                "presentation_title": "Title from planning",
+                "topic_focus": "The specific topic researched",
                 "slides": [
                     {{
                         "slide_number": 1,
-                        "content": {{
-                            "title": "Slide title text",
-                            "subtitle": "Optional subtitle text",
-                            "main_content": "Main slide content formatted according to content_type",
-                            "notes": "Optional speaker notes or context",
-                            "sources": ["Source URLs for facts/quotes used"]
-                        }}
+                        "title": "Slide title from planning",
+                        "subtitle": "Subtitle if needed",
+                        "content_type": "From planning structure",
+                        "main_content": "Content based on research data",
+                        "sources": ["Sources from research data"],
+                        "research_basis": "Which research theme this content is based on"
                     }}
                 ]
             }}
             """,
             agent=agent,
-            expected_output="Detailed slide content based on research and planning"
+            expected_output="Slide content based strictly on research data about the specific topic"
         )
     
     def design_task(self, agent, content_result, research_data):
@@ -401,24 +487,297 @@ class PPTTasks:
         """
         return Task(
             description=f'''
-            Based on the design specifications provided, generate separate HTML files for each slide.
+            Create individual HTML files for each slide with enhanced visual design and interactive elements.
 
             Design Specifications: {design_result}
 
-            Your task is to create individual HTML/CSS code for EACH SLIDE SEPARATELY, maintaining
-            consistent styling across all slides.
+            CRITICAL REQUIREMENTS:
 
-            Requirements:
-            1. Generate separate HTML code blocks, one for each slide
-            2. Each slide must include:
-               - Complete HTML structure (doctype, head, body)
-               - Embedded CSS for styling
-               - 16:9 aspect ratio
-               - Proper font scaling and layout
-            3. Maintain consistent styling across all slides
-            4. No JavaScript
-            5. No extra elements like buttons or navigation
-            6. Follow the aspect ratio. If there is more content, then change the font size according to it
+            1. Enhanced Visual Structure:
+               - Create stunning, modern slide layouts with visual elements
+               - Use the 16:9 aspect ratio (1920x1080px) effectively
+               - Include visual design elements where appropriate
+               - Each slide must be a self-contained HTML file
+               - No JavaScript or external resources
+
+            2. Advanced Content Layout:
+               - All content must be within .slide-content div
+               - Title in .slide-title with visual emphasis
+               - Main content in .slide-body with proper spacing
+               - Add visual elements like cards, highlights, and icons where appropriate
+               - Use these content classes based on type:
+                 * bullet-points for lists (with visual bullets)
+                 * paragraph for text (with visual cards when appropriate)
+                 * two-column for side-by-side content
+                 * numbered-list for steps (with visual numbers)
+                 * quote for quotations (with visual styling)
+                 * center for title slides (centered content)
+
+            3. Visual Enhancement Guidelines:
+               - Add .highlight spans for important keywords
+               - Use .card divs for important information blocks
+               - Use .visual-element spans for key concepts
+               - Add .center class for title slides
+               - Include visual separators and spacing
+
+            4. Enhanced HTML Template Structure:
+               Use this exact template with embedded CSS for each slide:
+               
+               ```html
+               <!DOCTYPE html>
+               <html>
+               <head>
+                   <meta charset="UTF-8">
+                   <title>Slide [NUMBER]</title>
+                   <style>
+                       * {{
+                           box-sizing: border-box;
+                           margin: 0;
+                           padding: 0;
+                       }}
+                       
+                       body {{
+                           font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                           width: 1920px;
+                           height: 1080px;
+                           margin: 0;
+                           padding: 0;
+                           background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                           color: #333;
+                           overflow: hidden;
+                       }}
+                       
+                       .slide {{
+                           width: 100%;
+                           height: 100%;
+                           display: flex;
+                           align-items: center;
+                           justify-content: center;
+                           padding: 60px;
+                           position: relative;
+                       }}
+                       
+                       .slide-content {{
+                           background: rgba(255, 255, 255, 0.95);
+                           border-radius: 20px;
+                           padding: 60px;
+                           box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+                           max-width: 1400px;
+                           width: 100%;
+                           position: relative;
+                       }}
+                       
+                       .slide-title {{
+                           font-size: 3.5rem;
+                           font-weight: bold;
+                           color: #2c3e50;
+                           margin-bottom: 30px;
+                           text-align: center;
+                           line-height: 1.2;
+                       }}
+                       
+                       .slide-body {{
+                           font-size: 1.8rem;
+                           line-height: 1.6;
+                           color: #34495e;
+                       }}
+                       
+                       .center {{
+                           text-align: center;
+                           display: flex;
+                           flex-direction: column;
+                           justify-content: center;
+                           align-items: center;
+                           height: 100%;
+                       }}
+                       
+                       .highlight {{
+                           background: linear-gradient(120deg, #f093fb 0%, #f5576c 100%);
+                           color: white;
+                           padding: 4px 12px;
+                           border-radius: 8px;
+                           font-weight: bold;
+                       }}
+                       
+                       .card {{
+                           background: #f8f9fa;
+                           border-radius: 15px;
+                           padding: 30px;
+                           margin: 20px 0;
+                           border-left: 5px solid #3498db;
+                           box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+                       }}
+                       
+                       .visual-element {{
+                           display: inline-block;
+                           background: linear-gradient(45deg, #667eea, #764ba2);
+                           color: white;
+                           padding: 8px 16px;
+                           border-radius: 20px;
+                           font-weight: bold;
+                           font-size: 1.6rem;
+                           margin: 5px;
+                       }}
+                       
+                       .bullet-points {{
+                           list-style: none;
+                           padding: 0;
+                       }}
+                       
+                       .bullet-points li {{
+                           margin: 20px 0;
+                           padding-left: 40px;
+                           position: relative;
+                           font-size: 1.6rem;
+                       }}
+                       
+                       .bullet-points li::before {{
+                           content: "●";
+                           color: #3498db;
+                           font-size: 2rem;
+                           position: absolute;
+                           left: 0;
+                           top: -2px;
+                       }}
+                       
+                       .two-column {{
+                           display: grid;
+                           grid-template-columns: 1fr 1fr;
+                           gap: 40px;
+                           align-items: start;
+                       }}
+                       
+                       h2 {{
+                           font-size: 2.5rem;
+                           color: #667eea;
+                           margin-bottom: 20px;
+                           text-align: center;
+                       }}
+                       
+                       h3 {{
+                           font-size: 2rem;
+                           color: #764ba2;
+                           margin-bottom: 15px;
+                       }}
+                       
+                       p {{
+                           margin-bottom: 15px;
+                           text-align: justify;
+                       }}
+                       
+                       .quote {{
+                           font-style: italic;
+                           font-size: 2rem;
+                           color: #555;
+                           text-align: center;
+                           position: relative;
+                           padding: 20px;
+                       }}
+                       
+                       .quote::before {{
+                           content: """;
+                           font-size: 4rem;
+                           color: #3498db;
+                           position: absolute;
+                           top: -10px;
+                           left: -10px;
+                       }}
+                       
+                       .source-citation {{
+                           text-align: right;
+                           font-size: 1.2rem;
+                           color: #7f8c8d;
+                           margin-top: 15px;
+                           font-style: normal;
+                       }}
+                   </style>
+               </head>
+               <body>
+                   <div class="slide">
+                       <div class="slide-content">
+                           <h1 class="slide-title">[TITLE]</h1>
+                           <div class="slide-body">
+                               [VISUALLY ENHANCED CONTENT BASED ON TYPE]
+                           </div>
+                       </div>
+                   </div>
+               </body>
+               </html>
+               ```
+
+            5. Enhanced Content Type Examples:
+               
+               For bullet points with visual elements:
+               ```html
+               <ul class="bullet-points">
+                   <li><span class="visual-element">Key Point</span> Additional explanation</li>
+                   <li><span class="highlight">Important term</span> with context</li>
+               </ul>
+               ```
+
+               For cards with important information:
+               ```html
+               <div class="card">
+                   <h3>Important Concept</h3>
+                   <p>Detailed explanation with <span class="highlight">emphasized terms</span></p>
+               </div>
+               ```
+
+               For two columns with visual balance:
+               ```html
+               <div class="two-column">
+                   <div class="column">
+                       <div class="card">
+                           <h3>Left Topic</h3>
+                           <p>Content here</p>
+                       </div>
+                   </div>
+                   <div class="column">
+                       <div class="card">
+                           <h3>Right Topic</h3>
+                           <p>Content here</p>
+                       </div>
+                   </div>
+               </div>
+               ```
+
+               For centered title slides:
+               ```html
+               <div class="center">
+                   <h1 class="slide-title">Main Title</h1>
+                   <h2>Subtitle</h2>
+                   <p>Brief description with <span class="highlight">key points</span></p>
+               </div>
+               ```
+
+               For quotes with visual styling:
+               ```html
+               <div class="card">
+                   <div class="quote">
+                       <p>"Quote text here"</p>
+                       <div class="source-citation">- Source Name</div>
+                   </div>
+               </div>
+               ```
+
+            6. Design Rules:
+               - Use visual elements strategically, not on every slide
+               - Maintain readability and balance
+               - Highlight only the most important 2-3 concepts per slide
+               - Use cards for important information blocks
+               - Keep consistent visual hierarchy
+               - The CSS is already provided in the template above - USE IT EXACTLY
+               - Clean, semantic HTML structure
+
+            7. Content Guidelines:
+               - Never exceed slide boundaries
+               - Keep titles to 1-2 lines maximum
+               - For bullet points, limit to 5-6 items
+               - Use visual elements to break up text
+               - Add source citations for factual content
+
+            8. CRITICAL: You MUST use the HTML template structure above INCLUDING the <style> section.
+               Each slide should be a complete HTML file with embedded CSS styling.
 
             Format your response as a series of HTML code blocks, one for each slide:
 
@@ -452,6 +811,8 @@ class PPTCrew:
         """
         Create a research-driven presentation using multiple AI agents.
         """
+        logger.info(f"🚀 PPTCrew starting presentation creation for topic: '{topic}'")
+        
         # Initialize agents
         researcher = self.agents.content_researcher_agent()
         planner = self.agents.planner_agent()
@@ -459,9 +820,13 @@ class PPTCrew:
         designer = self.agents.designer_agent()
         generator = self.agents.presentation_generator_agent()
 
+        # Ensure num_slides is an integer
         num_slides = style_preferences.get('num_slides', 5)
+        num_slides = int(num_slides) if isinstance(num_slides, str) else num_slides
+        logger.info(f"📊 Creating {num_slides} slides about: '{topic}'")
 
         # Research Phase: Gather and analyze web content
+        logger.info(f"🔍 PHASE 1: Starting research for topic: '{topic}'")
         research_task = self.tasks.research_task(
             researcher, topic, num_slides
         )
@@ -473,10 +838,12 @@ class PPTCrew:
             verbose=True
         )
 
-        logger.info("Starting research phase...")
+        logger.info(f"🔍 Executing research phase for: '{topic}'")
         research_result = crew.kickoff()
+        logger.info(f"✅ Research phase completed for: '{topic}'")
 
         # Planning Phase: Create structure based on research
+        logger.info(f"📋 PHASE 2: Starting planning based on research about: '{topic}'")
         planning_task = self.tasks.planning_task(
             planner, research_result, num_slides
         )
@@ -489,10 +856,12 @@ class PPTCrew:
             verbose=True
         )
 
-        logger.info("Starting planning phase...")
+        logger.info(f"📋 Executing planning phase for: '{topic}'")
         planning_result = crew.kickoff()
+        logger.info(f"✅ Planning phase completed for: '{topic}'")
 
         # Content Creation Phase
+        logger.info(f"✍️ PHASE 3: Creating content for: '{topic}'")
         content_task = self.tasks.content_creation_task(
             content_creator, planning_result, research_result
         )
@@ -505,10 +874,12 @@ class PPTCrew:
             verbose=True
         )
 
-        logger.info("Starting content creation phase...")
+        logger.info(f"✍️ Executing content creation for: '{topic}'")
         content_result = crew.kickoff()
+        logger.info(f"✅ Content creation completed for: '{topic}'")
 
         # Design Phase
+        logger.info(f"🎨 PHASE 4: Designing presentation for: '{topic}'")
         design_task = self.tasks.design_task(
             designer, content_result, research_result
         )
@@ -521,10 +892,12 @@ class PPTCrew:
             verbose=True
         )
 
-        logger.info("Starting design phase...")
+        logger.info(f"🎨 Executing design phase for: '{topic}'")
         design_result = crew.kickoff()
+        logger.info(f"✅ Design phase completed for: '{topic}'")
 
         # Generation Phase
+        logger.info(f"🏗️ PHASE 5: Generating final presentation for: '{topic}'")
         generation_task = self.tasks.presentation_generation_task(
             generator, design_result
         )
@@ -537,5 +910,8 @@ class PPTCrew:
             verbose=True
         )
 
-        logger.info("Starting presentation generation phase...")
-        return crew.kickoff()
+        logger.info(f"🏗️ Executing final generation for: '{topic}'")
+        final_result = crew.kickoff()
+        logger.info(f"🎉 Presentation generation COMPLETED for: '{topic}'")
+        
+        return final_result

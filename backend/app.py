@@ -72,11 +72,20 @@ def download_response(presentation_id):
 def create_presentation():
     try:
         data = request.json
-        title = data.get('title', 'Untitled Presentation')
+        logger.info(f"Received presentation data: {data}")
+        
+        # Support both 'topic' and 'title' for backward compatibility
+        title = data.get('topic') or data.get('title', 'Untitled Presentation')
         description = data.get('description', '')
         style_preferences = data.get('style_preferences', {})
-        num_slides = style_preferences.get('num_slides', 5)
-        theme_name = style_preferences.get('theme', 'modern')
+        
+        # Ensure num_slides is an integer
+        num_slides = data.get('num_slides') or style_preferences.get('num_slides', 5)
+        num_slides = int(num_slides) if isinstance(num_slides, str) else num_slides
+        
+        theme_name = data.get('theme') or style_preferences.get('theme', 'corporate_blue')
+        
+        logger.info(f"Processing presentation: title='{title}', num_slides={num_slides}, theme='{theme_name}'")
         
         # Start generation process
         try:
@@ -90,7 +99,7 @@ def create_presentation():
                 project_id = result['project_id']
                 output_path = result['file_path']
             else:
-                raise Exception(result['user_message'])
+                raise Exception(result.get('error', 'Unknown error occurred'))
             
             return jsonify({
                 'status': 'success',

@@ -22,6 +22,7 @@ class Config:
     # File paths
     GENERATED_PPTS_DIR = 'generated_ppts'
     TEMP_DIR = 'temp'
+    HTML_OUTPUTS_DIR = 'temp/html_outputs'
     
     # Supported formats
     SUPPORTED_FORMATS = ['pptx', 'pdf']

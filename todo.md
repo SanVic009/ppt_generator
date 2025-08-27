@@ -30,3 +30,17 @@
 - [ ] Provide deployment instructions.
 - [ ] Deliver all source code and documentation to the user.
 
+
+
+
+
+
+
+
+
+
+
+
+100% size me bahaar na jaaye content
+no overlapping in pdf
+good ui
