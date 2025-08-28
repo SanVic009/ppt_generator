@@ -1,8 +1,5 @@
 import time
 import json
-import os
-import requests
-from bs4 import BeautifulSoup
 import google.generativeai as genai
 from crewai import Agent, Task, Crew, Process
 from config import Config
@@ -346,6 +343,12 @@ class PPTTasks:
             4. Base slide titles and content on the research themes and facts
             5. Each slide must relate to the specific topic researched
             
+            CONTENT LENGTH PLANNING:
+            6. Plan slide titles to be ≤ 10 words maximum
+            7. For bullet_points content type: plan for 5-6 bullet points maximum
+            8. For paragraph content type: plan for 40-50 words maximum
+            9. Ensure content fits slide dimensions and readability
+            
             Slide Distribution Strategy:
             - Slide 1: Introduction to the specific topic
             - Slides 2-{num_slides-1}: Main themes/aspects from research
@@ -394,34 +397,49 @@ class PPTTasks:
             5. Use research themes, facts, and sources provided
             6. Content must be plain text - NO markdown formatting
             
+            CONTENT LENGTH CONSTRAINTS:
+            7. Slide titles: Maximum 10 words per title
+            8. Bullet points: Maximum 5-6 bullet points per slide
+            9. Paragraphs: Maximum 40-50 words per paragraph
+            10. Keep content concise to ensure proper slide formatting and readability
+            
             For each slide, create content that:
             - Relates directly to the researched topic
             - Uses facts and themes from the research data
             - Includes specific information, not generic advice
             - Cites sources when using specific facts
+            - STRICTLY FOLLOWS LENGTH LIMITS (count words carefully!)
+            - Prioritizes clarity and conciseness for slide readability
             
             Content Types:
-            - bullet_points: Use research facts as bullet points
-            - paragraph: Write paragraphs using research information
-            - title_only: Create impactful titles about the topic
-            - two_column: Compare aspects from research data
+            - bullet_points: Use research facts as bullet points (MAX 5-6 points, each ≤ 10 words)
+            - paragraph: Write paragraphs using research information (MAX 40-50 words per paragraph)
+            - title_only: Create impactful titles about the topic (MAX 10 words)
+            - two_column: Compare aspects from research data (each column ≤ 50 words)
             
             Output Format (JSON):
             {{
-                "presentation_title": "Title from planning",
+                "presentation_title": "Title from planning (≤ 10 words)",
                 "topic_focus": "The specific topic researched",
                 "slides": [
                     {{
                         "slide_number": 1,
-                        "title": "Slide title from planning",
-                        "subtitle": "Subtitle if needed",
+                        "title": "Slide title from planning (≤ 10 words)",
+                        "subtitle": "Subtitle if needed (≤ 8 words)",
                         "content_type": "From planning structure",
-                        "main_content": "Content based on research data",
+                        "main_content": "Content based on research data (follow length constraints by type)",
                         "sources": ["Sources from research data"],
                         "research_basis": "Which research theme this content is based on"
                     }}
                 ]
             }}
+            
+            CONTENT LENGTH EXAMPLES:
+            - Title: "AI Impact on Modern Healthcare" (5 words ✓)
+            - Bullet Point: "• Reduces diagnosis time by 40%" (6 words ✓)
+            - Paragraph: "Machine learning algorithms analyze medical data faster than traditional methods, improving patient outcomes significantly across multiple healthcare sectors." (19 words ✓)
+            
+            ALWAYS count words and stay within limits!
             """,
             agent=agent,
             expected_output="Slide content based strictly on research data about the specific topic"
@@ -469,7 +487,6 @@ class PPTTasks:
                - Clear visual hierarchy
                - Prominent source attributions
             2. Research Emphasis:
-               - Highlight key statistics
                - Visualize data effectively
                - Clear citation formatting
             3. Visual Balance:
@@ -493,6 +510,12 @@ class PPTTasks:
 
             CRITICAL REQUIREMENTS:
 
+            0. CONTENT LENGTH VALIDATION:
+               - Verify titles are ≤ 10 words
+               - Ensure bullet points are ≤ 6 items per slide
+               - Confirm paragraphs are ≤ 50 words
+               - Content must fit properly in slide layout
+
             1. Enhanced Visual Structure:
                - Create stunning, modern slide layouts with visual elements
                - Use the 16:9 aspect ratio (1920x1080px) effectively
@@ -504,7 +527,7 @@ class PPTTasks:
                - All content must be within .slide-content div
                - Title in .slide-title with visual emphasis
                - Main content in .slide-body with proper spacing
-               - Add visual elements like cards, highlights, and icons where appropriate
+               - Add visual elements like cards and icons where appropriate
                - Use these content classes based on type:
                  * bullet-points for lists (with visual bullets)
                  * paragraph for text (with visual cards when appropriate)
@@ -514,7 +537,6 @@ class PPTTasks:
                  * center for title slides (centered content)
 
             3. Visual Enhancement Guidelines:
-               - Add .highlight spans for important keywords
                - Use .card divs for important information blocks
                - Use .visual-element spans for key concepts
                - Add .center class for title slides
@@ -589,14 +611,6 @@ class PPTTasks:
                            justify-content: center;
                            align-items: center;
                            height: 100%;
-                       }}
-                       
-                       .highlight {{
-                           background: linear-gradient(120deg, #f093fb 0%, #f5576c 100%);
-                           color: white;
-                           padding: 4px 12px;
-                           border-radius: 8px;
-                           font-weight: bold;
                        }}
                        
                        .card {{
@@ -711,7 +725,7 @@ class PPTTasks:
                ```html
                <ul class="bullet-points">
                    <li><span class="visual-element">Key Point</span> Additional explanation</li>
-                   <li><span class="highlight">Important term</span> with context</li>
+                   <li>Important term with context</li>
                </ul>
                ```
 
@@ -719,7 +733,7 @@ class PPTTasks:
                ```html
                <div class="card">
                    <h3>Important Concept</h3>
-                   <p>Detailed explanation with <span class="highlight">emphasized terms</span></p>
+                   <p>Detailed explanation with emphasized terms</p>
                </div>
                ```
 
@@ -746,7 +760,7 @@ class PPTTasks:
                <div class="center">
                    <h1 class="slide-title">Main Title</h1>
                    <h2>Subtitle</h2>
-                   <p>Brief description with <span class="highlight">key points</span></p>
+                   <p>Brief description with key points</p>
                </div>
                ```
 
@@ -763,7 +777,6 @@ class PPTTasks:
             6. Design Rules:
                - Use visual elements strategically, not on every slide
                - Maintain readability and balance
-               - Highlight only the most important 2-3 concepts per slide
                - Use cards for important information blocks
                - Keep consistent visual hierarchy
                - The CSS is already provided in the template above - USE IT EXACTLY
@@ -796,6 +809,55 @@ class PPTTasks:
             agent=agent,
             expected_output="A single HTML file containing the complete presentation."
         )
+    
+    @staticmethod
+    def validate_content_length(content_data):
+        """
+        Validate that content adheres to length constraints.
+        
+        Args:
+            content_data (dict): Content data with slides
+            
+        Returns:
+            tuple: (is_valid, validation_errors)
+        """
+        errors = []
+        
+        # Check presentation title
+        if 'presentation_title' in content_data:
+            title_words = len(content_data['presentation_title'].split())
+            if title_words > 10:
+                errors.append(f"Presentation title too long: {title_words} words (max 10)")
+        
+        # Check each slide
+        if 'slides' in content_data:
+            for slide in content_data['slides']:
+                slide_num = slide.get('slide_number', 'Unknown')
+                
+                # Check slide title
+                if 'title' in slide:
+                    title_words = len(slide['title'].split())
+                    if title_words > 10:
+                        errors.append(f"Slide {slide_num} title too long: {title_words} words (max 10)")
+                
+                # Check content based on type
+                if 'main_content' in slide and 'content_type' in slide:
+                    content = slide['main_content']
+                    content_type = slide['content_type']
+                    
+                    if content_type == 'bullet_points':
+                        # Count bullet points (assuming each line is a bullet)
+                        bullet_count = len([line for line in content.split('\n') if line.strip()])
+                        if bullet_count > 6:
+                            errors.append(f"Slide {slide_num} has too many bullet points: {bullet_count} (max 6)")
+                    
+                    elif content_type == 'paragraph':
+                        # Count words in paragraph
+                        word_count = len(content.split())
+                        if word_count > 50:
+                            errors.append(f"Slide {slide_num} paragraph too long: {word_count} words (max 50)")
+        
+        return len(errors) == 0, errors
 
 class PPTCrew:
     """
@@ -913,5 +975,12 @@ class PPTCrew:
         logger.info(f"🏗️ Executing final generation for: '{topic}'")
         final_result = crew.kickoff()
         logger.info(f"🎉 Presentation generation COMPLETED for: '{topic}'")
+        import subprocess
+        subprocess.run([
+            "notify-send",
+            "--icon=dialog-information",
+            "PPT Generator",
+        ])
+
         
         return final_result

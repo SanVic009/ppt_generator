@@ -11,139 +11,6 @@ from flask import render_template_string
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# HTML template for presentations (copied from app.py)
-PRESENTATION_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ presentation.title }}</title>
-    <style>
-        {{ theme_css | safe }}
-
-        body {
-            font-family: var(--font-body, Arial, sans-serif);
-            margin: 0;
-            padding: 0;
-        }
-
-        .slide {
-            width: 100%;
-            height: 100%;
-            box-sizing: border-box;
-            padding: 40px;
-            page-break-after: always;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-        }
-
-        .slide h1, .slide h2, .slide h3 {
-            font-family: var(--font-heading, Arial, sans-serif);
-            margin-bottom: 20px;
-        }
-
-        .slide-body {
-            margin-top: 20px;
-        }
-
-        .slide-body p {
-            margin-bottom: 10px;
-            line-height: 1.5;
-        }
-
-        .slide-body ul {
-            padding-left: 20px;
-            margin: 10px 0;
-        }
-
-        .slide-body blockquote {
-            border-left: 4px solid #ccc;
-            padding-left: 15px;
-            color: #555;
-            margin: 20px 0;
-        }
-
-        .grid {
-            display: flex;
-            gap: 20px;
-        }
-        .grid-item {
-            flex: 1;
-            border: 1px solid #ddd;
-            padding: 10px;
-            border-radius: 6px;
-        }
-
-        /* Ensure last slide doesn’t force an extra blank page */
-        .slide:last-child {
-            page-break-after: auto;
-        }
-    </style>
-</head>
-<body class="theme-{{ presentation.theme }}">
-    {% for slide in presentation.slides %}
-    <div class="slide"
-         data-slide-type="{{ slide.type }}"
-         data-layout="{{ slide.layout }}"
-         {% if slide.background %}
-         style="background-color: {{ slide.background.value if slide.background.type == 'solid' else '' }};
-                background-image: url('{{ slide.background.value if slide.background.type == 'image' else '' }}');"
-         {% endif %}
-    >
-        <div class="slide-content">
-            {% if slide.title %}
-            <h2>{{ slide.title }}</h2>
-            {% endif %}
-
-            {% if slide.subtitle %}
-            <h3>{{ slide.subtitle }}</h3>
-            {% endif %}
-
-            {% if slide.content %}
-            <div class="slide-body">
-                {% for content_item in slide.content %}
-                    {% if content_item.type == 'text' %}
-                        <p>{{ content_item.value }}</p>
-                    {% elif content_item.type == 'image' %}
-                        <img src="{{ content_item.value }}" alt="" style="max-width: 100%; height: auto;">
-                    {% elif content_item.type == 'bullet_points' or content_item.type == 'list' %}
-                        <ul>
-                        {% for point in content_item.value %}
-                            <li>{{ point }}</li>
-                        {% endfor %}
-                        </ul>
-                    {% elif content_item.type == 'quote' %}
-                        <blockquote>
-                            <p>{{ content_item.value.text }}</p>
-                            {% if content_item.value.author %}
-                            <footer>— {{ content_item.value.author }}</footer>
-                            {% endif %}
-                        </blockquote>
-                    {% elif content_item.type == 'grid' %}
-                        <div class="grid">
-                            {% for item in content_item.value %}
-                            <div class="grid-item">
-                                {% if item.icon %}
-                                <div class="icon">{{ item.icon }}</div>
-                                {% endif %}
-                                <h4>{{ item.title }}</h4>
-                                <p>{{ item.content }}</p>
-                            </div>
-                            {% endfor %}
-                        </div>
-                    {% endif %}
-                {% endfor %}
-            </div>
-            {% endif %}
-        </div>
-    </div>
-    {% endfor %}
-</body>
-</html>
-"""
-
 class PPTProjectManager:
 
     @staticmethod
@@ -665,14 +532,6 @@ class PPTProjectManager:
             line-height: 1.5;
         }}
         
-        .highlight {{
-            background: linear-gradient(120deg, {theme.color_scheme.accent}, {theme.color_scheme.secondary});
-            color: white;
-            padding: 5px 10px;
-            border-radius: 5px;
-            display: inline-block;
-        }}
-        
         .card {{
             background: rgba(255, 255, 255, 0.9);
             border-radius: 15px;
@@ -731,99 +590,99 @@ class PPTProjectManager:
         logger.warning("No project-specific slides found, using fallback method")
         return self._create_html_presentation_fallback(plan_data, project_id, theme)
 
-    def _create_html_presentation_fallback(self, plan_data: dict, project_id: str, theme: ThemeConfig) -> str:
-        """
-        Creates an HTML presentation from the plan data and converts it to PDF.
+    # def _create_html_presentation_fallback(self, plan_data: dict, project_id: str, theme: ThemeConfig) -> str:
+    #     """
+    #     Creates an HTML presentation from the plan data and converts it to PDF.
         
-        Args:
-            plan_data (dict): The presentation plan data containing slides and content
-            project_id (str): The unique identifier for the presentation
-            theme (ThemeConfig): The theme configuration to use
+    #     Args:
+    #         plan_data (dict): The presentation plan data containing slides and content
+    #         project_id (str): The unique identifier for the presentation
+    #         theme (ThemeConfig): The theme configuration to use
             
-        Returns:
-            str: Path to the generated PDF file
-        """
-        logger.info(f"Creating HTML presentation data with theme: {theme.display_name}")
+    #     Returns:
+    #         str: Path to the generated PDF file
+    #     """
+    #     logger.info(f"Creating HTML presentation data with theme: {theme.display_name}")
 
-        # Structure the presentation data for the template
-        presentation_data = {
-            'id': project_id,
-            'title': plan_data.get('presentation_title', 'Generated Presentation'),
-            'theme': theme.name,
-            'metadata': {
-                'description': plan_data.get('presentation_description', 'Created with AI'),
-                'author': plan_data.get('author', 'AI Presentation Generator'),
-                'date': datetime.now().strftime("%Y-%m-%d")
-            },
-            'slides': []
-        }
+    #     # Structure the presentation data for the template
+    #     presentation_data = {
+    #         'id': project_id,
+    #         'title': plan_data.get('presentation_title', 'Generated Presentation'),
+    #         'theme': theme.name,
+    #         'metadata': {
+    #             'description': plan_data.get('presentation_description', 'Created with AI'),
+    #             'author': plan_data.get('author', 'AI Presentation Generator'),
+    #             'date': datetime.now().strftime("%Y-%m-%d")
+    #         },
+    #         'slides': []
+    #     }
 
-        # Process each slide
-        for slide_data in plan_data.get('slides', []):
-            html_slide = {
-                "type": slide_data.get("content_type", "content"),
-                "title": slide_data.get("title", ""),
-                "subtitle": slide_data.get("subtitle", ""),
-                "layout": slide_data.get("layout_style", "standard"),
-                "background": {
-                    "type": "solid",
-                    "value": theme.color_scheme.background_start
-                },
-                "content": []
-            }
+    #     # Process each slide
+    #     for slide_data in plan_data.get('slides', []):
+    #         html_slide = {
+    #             "type": slide_data.get("content_type", "content"),
+    #             "title": slide_data.get("title", ""),
+    #             "subtitle": slide_data.get("subtitle", ""),
+    #             "layout": slide_data.get("layout_style", "standard"),
+    #             "background": {
+    #                 "type": "solid",
+    #                 "value": theme.color_scheme.background_start
+    #             },
+    #             "content": []
+    #         }
 
-            # Convert content based on type
-            if slide_data.get("content_type") == "bullet_points" and slide_data.get("bullet_points"):
-                html_slide["content"].append({
-                    "type": "list",
-                    "value": slide_data["bullet_points"]
-                })
-            elif slide_data.get("content_type") == "paragraph" and slide_data.get("content"):
-                html_slide["content"].append({
-                    "type": "text",
-                    "value": slide_data["content"]
-                })
-            elif slide_data.get("content_type") == "two_column" and (slide_data.get("left_content") or slide_data.get("right_content")):
-                html_slide["content"].append({
-                    "type": "columns",
-                    "value": {
-                        "left": slide_data.get("left_content", ""),
-                        "right": slide_data.get("right_content", "")
-                    }
-                })
-            elif slide_data.get("content"):
-                # Default text content
-                html_slide["content"].append({
-                    "type": "text",
-                    "value": slide_data["content"]
-                })
+    #         # Convert content based on type
+    #         if slide_data.get("content_type") == "bullet_points" and slide_data.get("bullet_points"):
+    #             html_slide["content"].append({
+    #                 "type": "list",
+    #                 "value": slide_data["bullet_points"]
+    #             })
+    #         elif slide_data.get("content_type") == "paragraph" and slide_data.get("content"):
+    #             html_slide["content"].append({
+    #                 "type": "text",
+    #                 "value": slide_data["content"]
+    #             })
+    #         elif slide_data.get("content_type") == "two_column" and (slide_data.get("left_content") or slide_data.get("right_content")):
+    #             html_slide["content"].append({
+    #                 "type": "columns",
+    #                 "value": {
+    #                     "left": slide_data.get("left_content", ""),
+    #                     "right": slide_data.get("right_content", "")
+    #                 }
+    #             })
+    #         elif slide_data.get("content"):
+    #             # Default text content
+    #             html_slide["content"].append({
+    #                 "type": "text",
+    #                 "value": slide_data["content"]
+    #             })
 
-            presentation_data['slides'].append(html_slide)
+    #         presentation_data['slides'].append(html_slide)
 
-        # Generate HTML using the template
-        html_content = render_template_string(
-            PRESENTATION_TEMPLATE,
-            presentation=presentation_data,
-            theme_css=theme.get_css()
-        )
+    #     # Generate HTML using the template
+    #     html_content = render_template_string(
+    #         PRESENTATION_TEMPLATE,
+    #         presentation=presentation_data,
+    #         theme_css=theme.get_css()
+    #     )
 
-        # Store the HTML for debugging
-        debug_dir = os.path.join(Config.TEMP_DIR, "debug_html")
-        os.makedirs(debug_dir, exist_ok=True)
-        html_path = os.path.join(debug_dir, f"presentation_{project_id}.html")
+    #     # Store the HTML for debugging
+    #     debug_dir = os.path.join(Config.TEMP_DIR, "debug_html")
+    #     os.makedirs(debug_dir, exist_ok=True)
+    #     html_path = os.path.join(debug_dir, f"presentation_{project_id}.html")
         
-        with open(html_path, 'w', encoding='utf-8') as f:
-            f.write(html_content)
-        logger.info(f"Saved HTML presentation to: {html_path}")
+    #     with open(html_path, 'w', encoding='utf-8') as f:
+    #         f.write(html_content)
+    #     logger.info(f"Saved HTML presentation to: {html_path}")
         
-        # Generate PDF from the HTML
-        try:
-            pdf_path = self._generate_pdf_from_html(project_id, html_content)
-            logger.info(f"Generated PDF at: {pdf_path}")
-            return pdf_path
-        except Exception as e:
-            logger.error(f"Error generating PDF: {str(e)}")
-            raise
+    #     # Generate PDF from the HTML
+    #     try:
+    #         pdf_path = self._generate_pdf_from_html(project_id, html_content)
+    #         logger.info(f"Generated PDF at: {pdf_path}")
+    #         return pdf_path
+    #     except Exception as e:
+    #         logger.error(f"Error generating PDF: {str(e)}")
+    #         raise
 
     def _generate_pdf_from_html(self, project_id: str, html_content: str) -> str:
         """Generate PDF from HTML content with proper styling for PDF output"""
@@ -896,7 +755,7 @@ class PPTProjectManager:
         }}
         
         /* Preserve background colors and gradients */
-        .highlight, .card, .visual-element {{
+        .card, .visual-element {{
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
         }}
