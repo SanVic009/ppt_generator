@@ -1,7 +1,9 @@
 import { useState } from 'react'
-import { FileText, Loader2, Sparkles, Wand2 } from 'lucide-react'
+import { FileText, Loader2, Sparkles, Wand2, Download, RotateCcw } from 'lucide-react'
+import { useDarkMode } from '../context/DarkModeContext'
 
-export function PresentationForm({ onSubmit, isLoading }) {
+export function PresentationForm({ onSubmit, isLoading, onFormChange, isComplete, onDownload, lastProjectId }) {
+  const { isDark } = useDarkMode()
   const [formData, setFormData] = useState({
     topic: '',
     description: '',
@@ -21,6 +23,10 @@ export function PresentationForm({ onSubmit, isLoading }) {
       ...prev,
       [name]: name === 'num_slides' ? parseInt(value, 10) : value
     }))
+    // Call onFormChange to reset preview when form changes
+    if (onFormChange) {
+      onFormChange()
+    }
   }
 
   return (
@@ -42,7 +48,7 @@ export function PresentationForm({ onSubmit, isLoading }) {
         <div className="space-y-3">
           <label htmlFor="topic" className="block text-sm font-semibold text-gray-700">
             <span className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-purple-500" />
+              {/* <Sparkles className="h-4 w-4 text-purple-500" /> */}
               Presentation Topic *
             </span>
           </label>
@@ -57,11 +63,11 @@ export function PresentationForm({ onSubmit, isLoading }) {
             required
           />
           <p className="text-xs text-gray-500 font-medium pl-6">
-            💡 Enter a compelling topic that sparks curiosity
+            Enter a compelling topic that sparks curiosity
           </p>
         </div>
 
-        <div className="space-y-3">
+        {/* <div className="space-y-3">
           <label htmlFor="description" className="block text-sm font-semibold text-gray-700">
             Additional Context (Optional)
           </label>
@@ -77,7 +83,7 @@ export function PresentationForm({ onSubmit, isLoading }) {
           <p className="text-xs text-gray-500 font-medium">
             🎯 Help our AI understand your vision better
           </p>
-        </div>
+        </div> */}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-3">
@@ -118,29 +124,55 @@ export function PresentationForm({ onSubmit, isLoading }) {
         </div>
 
         <div className="pt-4">
-          <button
-            type="submit"
-            disabled={isLoading || !formData.topic.trim()}
-            className="btn-primary w-full flex items-center justify-center space-x-3 text-lg font-semibold"
-          >
-            {isLoading ? (
-              <>
-                <Loader2 className="h-5 w-5 animate-spin" />
-                <span>Creating Your Presentation...</span>
-                <div className="flex space-x-1">
-                  <div className="w-2 h-2 bg-white/60 rounded-full animate-bounce"></div>
-                  <div className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                  <div className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
-                </div>
-              </>
-            ) : (
-              <>
-                <Wand2 className="h-5 w-5" />
-                <span>Generate Presentation</span>
+          {isComplete && lastProjectId ? (
+            <div className="space-y-4">
+              {/* Download Button */}
+              <button
+                type="button"
+                onClick={() => onDownload && onDownload(lastProjectId)}
+                className="btn-primary w-full flex items-center justify-center space-x-3 text-lg font-semibold bg-gradient-to-r from-green-500 to-blue-600 hover:from-green-600 hover:to-blue-700"
+              >
+                <Download className="h-5 w-5" />
+                <span>Download Presentation</span>
                 <Sparkles className="h-5 w-5" />
-              </>
-            )}
-          </button>
+              </button>
+              
+              {/* Generate Again Button */}
+              <button
+                type="submit"
+                disabled={isLoading || !formData.topic.trim()}
+                className="btn-primary w-full flex items-center justify-center space-x-3 text-lg font-semibold bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700"
+              >
+                <RotateCcw className="h-5 w-5" />
+                <span>Generate New Presentation</span>
+                <Sparkles className="h-5 w-5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="submit"
+              disabled={isLoading || !formData.topic.trim()}
+              className="btn-primary w-full flex items-center justify-center space-x-3 text-lg font-semibold"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span>Creating Your Presentation...</span>
+                  <div className="flex space-x-1">
+                    <div className="w-2 h-2 bg-white/60 rounded-full animate-bounce"></div>
+                    <div className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                    <div className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Wand2 className="h-5 w-5" />
+                  <span>Generate Presentation</span>
+                  <Sparkles className="h-5 w-5" />
+                </>
+              )}
+            </button>
+          )}
         </div>
       </form>
     </div>

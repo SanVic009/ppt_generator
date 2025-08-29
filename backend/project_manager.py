@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from datetime import datetime
 from agents import PPTCrew
 from config import Config
@@ -12,6 +13,55 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class PPTProjectManager:
+
+    @staticmethod
+    def sanitize_filename(text: str) -> str:
+        """
+        Sanitize a string to be safe for use as a filename.
+        Removes special characters and replaces spaces with underscores.
+        """
+        if not text:
+            return "untitled"
+        
+        # Remove HTML tags if any
+        text = re.sub(r'<[^>]*>', '', text)
+        
+        # Replace spaces with underscores and remove special characters
+        sanitized = re.sub(r'[^\w\s-]', '', text.strip())
+        sanitized = re.sub(r'[\s_-]+', '_', sanitized)
+        
+        # Limit length to 50 characters
+        sanitized = sanitized[:50].strip('_')
+        
+        # Ensure it's not empty
+        return sanitized.lower() if sanitized else "untitled"
+
+    @staticmethod
+    def generate_project_id_from_topic(topic: str, existing_projects: dict = None) -> str:
+        """
+        Generate a unique project ID based on the topic name.
+        If a duplicate exists, append a counter.
+        """
+        base_name = PPTProjectManager.sanitize_filename(topic)
+        project_id = base_name
+        
+        # Check for existing files in the generated_ppts directory
+        counter = 1
+        while True:
+            pdf_path = os.path.join(Config.GENERATED_PPTS_DIR, f"presentation_{project_id}.pdf")
+            json_path = os.path.join(Config.GENERATED_PPTS_DIR, f"presentation_{project_id}.json")
+            
+            # Also check if it's in the current projects dict
+            exists_in_memory = existing_projects and project_id in existing_projects
+            exists_as_file = os.path.exists(pdf_path) or os.path.exists(json_path)
+            
+            if not exists_in_memory and not exists_as_file:
+                break
+                
+            counter += 1
+            project_id = f"{base_name}_{counter}"
+        
+        return project_id
 
     @staticmethod
     def clean_html_code_block(content: str) -> str:
@@ -163,6 +213,36 @@ class PPTProjectManager:
             logger.error(f"Error deleting project {project_id}: {e}")
             return False
 
+    def get_project_status(self, project_id: str) -> dict:
+        """Get the status of a specific project."""
+        project = self.projects.get(project_id)
+        if not project:
+            return {'status': 'not_found', 'message': 'Project not found'}
+        
+        status_info = {
+            'status': project.get('status', 'unknown'),
+            'current_step': 'No current step available', # Default value
+            'progress': 0 # Default value
+        }
+        
+        # Extract the last stage as the current step
+        if 'stages' in project and project['stages']:
+            status_info['current_step'] = project['stages'][-1].get('message', 'No message available')
+        
+        # Simple progress simulation
+        if status_info['status'] == 'started':
+            status_info['progress'] = 10
+        elif status_info['status'] == 'planning':
+            status_info['progress'] = 30
+        elif status_info['status'] == 'generation':
+            status_info['progress'] = 60
+        elif status_info['status'] == 'processing':
+            status_info['progress'] = 80
+        elif status_info['status'] == 'completed':
+            status_info['progress'] = 100
+            
+        return status_info
+
     def _load_project_states(self):
         try:
             if os.path.exists(self.state_file):
@@ -224,15 +304,21 @@ class PPTProjectManager:
 
     def generate_presentation(self, user_prompt, num_slides=5, project_id=None, theme_name='corporate_blue'):
         if not project_id:
-            project_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+            project_id = self.generate_project_id_from_topic(user_prompt, self.projects)
         
         try:
-            logger.info(f"🎯 STARTING PRESENTATION GENERATION FOR TOPIC: '{user_prompt}'")
+            logger.info(f"🎯 STARTING PRESENTATION GENERATION FOR TOPIC: '{user_prompt}' (ID: {project_id})")
             
             self.projects[project_id] = {
-                'id': project_id, 'prompt': user_prompt, 'num_slides': num_slides,
-                'theme_name': theme_name, 'status': 'started',
-                'created_at': datetime.now().isoformat(), 'stages': []
+                'id': project_id, 
+                'prompt': user_prompt,
+                'topic': user_prompt,  # Add topic field for easier access
+                'title': user_prompt,  # Add title field for compatibility
+                'num_slides': num_slides,
+                'theme_name': theme_name, 
+                'status': 'started',
+                'created_at': datetime.now().isoformat(), 
+                'stages': []
             }
             
             self.emit_progress(project_id, 'initialization', f'Starting presentation generation for: {user_prompt}')

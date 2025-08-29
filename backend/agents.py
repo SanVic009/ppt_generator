@@ -38,25 +38,27 @@ def retry_with_backoff(func, max_retries=None, delay=None, backoff=None):
             except Exception as e:
                 error_str = str(e)
                 
-                # Check if it's a 503 overload error or similar
-                is_overload_error = any(keyword in error_str.lower() for keyword in [
-                    "503", "overloaded", "unavailable", "too many requests", "rate limit", "quota"
+                # Check if it's a retryable error (overload or network issues)
+                is_retryable_error = any(keyword in error_str.lower() for keyword in [
+                    "503", "overloaded", "unavailable", "too many requests", "rate limit", "quota",
+                    "temporary failure in name resolution", "connection error", "timeout", 
+                    "network", "dns", "resolve", "connection refused", "connection timeout"
                 ])
                 
-                if is_overload_error:
+                if is_retryable_error:
                     if attempt < max_retries:
                         wait_time = min(delay * (backoff ** attempt), Config.MAX_RETRY_DELAY)
-                        logger.warning(f"API overloaded (attempt {attempt + 1}/{max_retries + 1}). "
+                        logger.warning(f"API/Network error (attempt {attempt + 1}/{max_retries + 1}). "
                                      f"Retrying in {wait_time:.1f} seconds...")
                         logger.info(f"Error details: {error_str}")
                         time.sleep(wait_time)
                         continue
                     else:
-                        logger.error(f"API still overloaded after {max_retries} retries. "
+                        logger.error(f"API/Network still unavailable after {max_retries} retries. "
                                    f"Total wait time: {sum(min(delay * (backoff ** i), Config.MAX_RETRY_DELAY) for i in range(max_retries)):.1f} seconds")
                         raise e
                 else:
-                    # For non-overload errors, don't retry
+                    # For non-retryable errors, don't retry
                     logger.error(f"Non-retryable error: {error_str}")
                     raise e
         

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { CheckCircle, Clock, AlertCircle, Loader2, Zap, Sparkles, Download } from 'lucide-react'
+import { CheckCircle, Clock, AlertCircle, Loader2, Zap, Sparkles, Download, X } from 'lucide-react'
 import { api } from '../services/api'
 
 export function GenerationStatus({ projectId, onComplete, onDownload }) {
@@ -48,8 +48,8 @@ export function GenerationStatus({ projectId, onComplete, onDownload }) {
         if (data.status === 'completed') {
           setStatus('completed')
           setProgress(100)
-          setCurrentStep('🎉 Your amazing presentation is ready!')
-          setTimeout(() => onComplete(), 2000)
+          setCurrentStep('✨ Your presentation is ready!')
+          setTimeout(() => onComplete(projectId), 10000) // Changed from 2000 to 10000 (10 seconds)
         } else if (data.status === 'error') {
           setStatus('error')
           setCurrentStep('❌ Something went wrong during generation')
@@ -154,9 +154,18 @@ export function GenerationStatus({ projectId, onComplete, onDownload }) {
           
           {status === 'completed' && (
             <div className="space-y-4">
-              <div className="flex items-center space-x-2 text-green-600 font-semibold">
-                <Sparkles className="h-5 w-5 animate-pulse" />
-                <p>Your presentation is ready!</p>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2 text-green-600 font-semibold">
+                  <Sparkles className="h-5 w-5 animate-pulse" />
+                  <p>Your presentation is ready!</p>
+                </div>
+                <button
+                  onClick={() => onComplete(projectId)}
+                  className="text-gray-400 hover:text-gray-600 p-1"
+                  title="Dismiss this notification"
+                >
+                  <X className="h-5 w-5" />
+                </button>
               </div>
               
               <div className="flex items-center space-x-4">

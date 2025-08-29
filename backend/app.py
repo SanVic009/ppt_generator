@@ -2,6 +2,7 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning, module='pydantic')
 
 import os
+import json
 from datetime import datetime
 from flask import Flask, request, jsonify, send_file, render_template_string
 from flask_socketio import SocketIO, emit, join_room, leave_room
@@ -45,10 +46,33 @@ def download_pdf(presentation_id):
     try:
         pdf_path = project_manager.get_pdf_path(presentation_id)
         if pdf_path and os.path.exists(pdf_path):
+            # Try to get the topic name for a better filename
+            download_name = f'presentation_{presentation_id}.pdf'
+            
+            # Check if we have project data with topic information
+            if presentation_id in project_manager.projects:
+                topic = project_manager.projects[presentation_id].get('topic', '')
+                if topic:
+                    sanitized_topic = PPTProjectManager.sanitize_filename(topic)
+                    download_name = f'{sanitized_topic}.pdf'
+            else:
+                # Try to get topic from JSON file
+                json_path = project_manager.get_response_path(presentation_id)
+                if json_path and os.path.exists(json_path):
+                    try:
+                        with open(json_path, 'r', encoding='utf-8') as f:
+                            json_data = json.load(f)
+                            topic = json_data.get('topic') or json_data.get('title', '')
+                            if topic:
+                                sanitized_topic = PPTProjectManager.sanitize_filename(topic)
+                                download_name = f'{sanitized_topic}.pdf'
+                    except Exception as e:
+                        logger.warning(f"Could not load topic from JSON for download: {e}")
+            
             return send_file(pdf_path, 
                            mimetype='application/pdf',
                            as_attachment=True,
-                           download_name=f'presentation_{presentation_id}.pdf')
+                           download_name=download_name)
         return jsonify({'error': 'PDF not found'}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -297,10 +321,10 @@ def list_projects():
     """List all projects"""
     try:
         projects = project_manager.list_projects()
-        return jsonify({'projects': projects})
+        return jsonify({'success': True, 'projects': projects})
     except Exception as e:
         logger.error(f"Error listing projects: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 @app.route('/api/projects/<project_id>', methods=['DELETE'])
 def delete_project(project_id):

@@ -11,8 +11,85 @@ html {
 }
 
 body {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   min-height: 100vh;
+  transition: background 0.3s ease;
+}
+
+/* Dark mode styles - background handled by App component */
+
+body.dark .card {
+  background: rgba(30, 41, 59, 0.8);
+  border-color: rgba(148, 163, 184, 0.2);
+  color: #e2e8f0;
+}
+
+body.dark .input-field {
+  background: rgba(30, 41, 59, 0.9);
+  border-color: #475569;
+  color: #e2e8f0;
+}
+
+body.dark .input-field::placeholder {
+  color: #94a3b8;
+}
+
+body.dark .input-field:focus {
+  border-color: #667eea;
+  background: rgba(30, 41, 59, 1);
+}
+
+body.dark .gradient-text {
+  background: linear-gradient(135deg, #93c5fd 0%, #c084fc 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+body.dark .glass-effect {
+  background: rgba(30, 41, 59, 0.4);
+  border-color: rgba(148, 163, 184, 0.2);
+}
+
+body.dark label {
+  color: #e2e8f0;
+}
+
+body.dark .text-gray-700 {
+  color: #e2e8f0 !important;
+}
+
+body.dark .text-gray-600 {
+  color: #cbd5e1 !important;
+}
+
+body.dark .text-gray-500 {
+  color: #94a3b8 !important;
+}
+
+body.dark .text-gray-800 {
+  color: #f1f5f9 !important;
+}
+
+body.dark select option {
+  background: #1e293b;
+  color: #e2e8f0;
+}
+
+/* Dark mode theme cards */
+body.dark .bg-white {
+  background: rgba(30, 41, 59, 0.8) !important;
+}
+
+body.dark .border-gray-200 {
+  border-color: rgba(148, 163, 184, 0.3) !important;
+}
+
+body.dark .shadow-lg {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2) !important;
+}
+
+body.dark .hover\:shadow-xl:hover {
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 10px 10px -5px rgba(0, 0, 0, 0.2) !important;
 }
 
 .btn-primary {
@@ -92,7 +169,7 @@ body {
 .input-field {
   width: 100%;
   padding: 0.875rem 1rem;
-  border: 2px solid rgba(255, 255, 255, 0.3);
+  border: 2px solid #e5e7eb;
   border-radius: 12px;
   transition: all 0.3s ease;
   font-size: 1rem;

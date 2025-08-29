@@ -1,19 +1,25 @@
 import { useState, useEffect } from 'react'
 import { PresentationForm } from './components/PresentationForm'
-import { ThemeSelector } from './components/ThemeSelector'
+import { ThemeMatrix } from './components/ThemeMatrix'
 import { GenerationStatus } from './components/GenerationStatus'
 import { PresentationList } from './components/PresentationList'
 import { Header } from './components/Header'
 import { Footer } from './components/Footer'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/Tabs'
 import { api } from './services/api'
+import { useDarkMode } from './context/DarkModeContext'
 
 function App() {
+  const { isDark } = useDarkMode()
+  console.log('App dark mode state:', isDark) // Debug log
   const [themes, setThemes] = useState([])
   const [selectedTheme, setSelectedTheme] = useState('corporate_blue')
   const [activeProject, setActiveProject] = useState(null)
   const [presentations, setPresentations] = useState([])
   const [isLoading, setIsLoading] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
+  const [lastGeneratedData, setLastGeneratedData] = useState(null)
+  const [completedProjectId, setCompletedProjectId] = useState(null)
 
   useEffect(() => {
     loadThemes()
@@ -44,6 +50,8 @@ function App() {
 
   const handleGeneratePresentation = async (formData) => {
     setIsLoading(true)
+    setShowPreview(false) // Reset preview state
+    setCompletedProjectId(null) // Reset completion state when starting new generation
     try {
       const response = await api.generatePresentation({
         ...formData,
@@ -52,6 +60,10 @@ function App() {
       
       if (response.data.success) {
         setActiveProject(response.data.project_id)
+        setLastGeneratedData({
+          ...formData,
+          theme: selectedTheme
+        })
         await loadPresentations()
       }
     } catch (error) {
@@ -96,11 +108,27 @@ function App() {
     <div className="min-h-screen relative overflow-hidden">
       {/* Animated background */}
       <div className="fixed inset-0 z-0">
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50"></div>
+        <div className={`absolute inset-0 ${
+          isDark 
+            ? 'bg-gradient-to-br from-slate-900 via-slate-800 to-slate-700' 
+            : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50'
+        }`}></div>
         <div className="absolute top-0 left-0 w-full h-full overflow-hidden">
-          <div className="absolute -top-1/2 -right-1/2 w-96 h-96 bg-gradient-to-br from-blue-400/10 to-purple-600/10 rounded-full blur-3xl animate-pulse"></div>
-          <div className="absolute -bottom-1/2 -left-1/2 w-96 h-96 bg-gradient-to-tr from-purple-400/10 to-pink-600/10 rounded-full blur-3xl animate-pulse" style={{animationDelay: '2s'}}></div>
-          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-gradient-to-r from-indigo-400/5 to-cyan-600/5 rounded-full blur-3xl animate-pulse" style={{animationDelay: '4s'}}></div>
+          <div className={`absolute -top-1/2 -right-1/2 w-96 h-96 rounded-full blur-3xl animate-pulse ${
+            isDark 
+              ? 'bg-gradient-to-br from-slate-700/20 to-slate-600/20' 
+              : 'bg-gradient-to-br from-blue-400/10 to-purple-600/10'
+          }`}></div>
+          <div className={`absolute -bottom-1/2 -left-1/2 w-96 h-96 rounded-full blur-3xl animate-pulse ${
+            isDark 
+              ? 'bg-gradient-to-tr from-slate-700/20 to-slate-600/20' 
+              : 'bg-gradient-to-tr from-purple-400/10 to-pink-600/10'
+          }`} style={{animationDelay: '2s'}}></div>
+          <div className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full blur-3xl animate-pulse ${
+            isDark 
+              ? 'bg-gradient-to-r from-slate-700/10 to-slate-600/10' 
+              : 'bg-gradient-to-r from-indigo-400/5 to-cyan-600/5'
+          }`} style={{animationDelay: '4s'}}></div>
         </div>
       </div>
 
@@ -110,36 +138,51 @@ function App() {
         <main className="container mx-auto px-6 py-8">
           <div className="max-w-7xl mx-auto">
             <Tabs defaultValue="generate" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="generate">✨ Generate Presentation</TabsTrigger>
-                <TabsTrigger value="manage">📊 Manage Presentations</TabsTrigger>
-              </TabsList>
+              <div className="flex justify-center mb-8">
+                <TabsList className="gap-3">
+                  <TabsTrigger value="generate"> Generate Presentation</TabsTrigger>
+                  <TabsTrigger value="manage"> Manage Presentations</TabsTrigger>
+                </TabsList>
+              </div>
               
               <TabsContent value="generate" className="space-y-8">
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  <div className="lg:col-span-2">
-                    <PresentationForm 
-                      onSubmit={handleGeneratePresentation}
-                      isLoading={isLoading}
-                    />
-                  </div>
-                  <div>
-                    <ThemeSelector 
-                      themes={themes}
-                      selectedTheme={selectedTheme}
-                      onThemeChange={setSelectedTheme}
-                    />
-                  </div>
+                <div className="max-w-4xl mx-auto">
+                  <PresentationForm 
+                    onSubmit={handleGeneratePresentation}
+                    isLoading={isLoading}
+                    onFormChange={() => {
+                      setShowPreview(false) // Reset preview when form changes, but keep completedProjectId
+                    }}
+                    isComplete={!!completedProjectId}
+                    onDownload={handleDownloadPDF}
+                    lastProjectId={completedProjectId}
+                  />
+                </div>
+                
+                <div className="max-w-6xl mx-auto">
+                  <ThemeMatrix 
+                    themes={themes}
+                    selectedTheme={selectedTheme}
+                    onThemeChange={setSelectedTheme}
+                    showPreview={showPreview}
+                    previewData={lastGeneratedData}
+                    onNewPresentation={() => setShowPreview(false)}
+                  />
                 </div>
                 
                 {activeProject && (
                   <GenerationStatus 
                     projectId={activeProject}
-                    onComplete={() => {
+                    onComplete={(projectId) => {
                       loadPresentations()
+                      setShowPreview(true) // Show preview when generation is complete
+                      setCompletedProjectId(projectId || activeProject) // Set the completed project ID
                       setActiveProject(null)
                     }}
-                    onDownload={handleDownloadPDF}
+                    onDownload={(projectId) => {
+                      handleDownloadPDF(projectId)
+                      // Keep the GenerationStatus visible until user manually dismisses or downloads
+                    }}
                   />
                 )}
               </TabsContent>
