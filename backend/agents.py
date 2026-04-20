@@ -1,10 +1,12 @@
 import time
 import json
+import logging
+
 import google.generativeai as genai
 from crewai import Agent, Task, Crew, Process
+
 from config import Config
 from scraper import google_search, scrape_webpage
-import logging
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -20,6 +22,7 @@ DEFAULT_GENERATION_CONFIG = {
     "max_output_tokens": 8192,
 }
 
+
 def retry_with_backoff(func, max_retries=None, delay=None, backoff=None):
     """
     Retry decorator with exponential backoff for handling API overload errors.
@@ -30,41 +33,62 @@ def retry_with_backoff(func, max_retries=None, delay=None, backoff=None):
         delay = Config.RETRY_DELAY
     if backoff is None:
         backoff = Config.RETRY_BACKOFF
-    
+
     def wrapper(*args, **kwargs):
         for attempt in range(max_retries + 1):
             try:
                 return func(*args, **kwargs)
             except Exception as e:
                 error_str = str(e)
-                
+
                 # Check if it's a retryable error (overload or network issues)
-                is_retryable_error = any(keyword in error_str.lower() for keyword in [
-                    "503", "overloaded", "unavailable", "too many requests", "rate limit", "quota",
-                    "temporary failure in name resolution", "connection error", "timeout", 
-                    "network", "dns", "resolve", "connection refused", "connection timeout"
-                ])
-                
+                is_retryable_error = any(
+                    keyword in error_str.lower()
+                    for keyword in [
+                        "503",
+                        "overloaded",
+                        "unavailable",
+                        "too many requests",
+                        "rate limit",
+                        "quota",
+                        "temporary failure in name resolution",
+                        "connection error",
+                        "timeout",
+                        "network",
+                        "dns",
+                        "resolve",
+                        "connection refused",
+                        "connection timeout",
+                    ]
+                )
+
                 if is_retryable_error:
                     if attempt < max_retries:
-                        wait_time = min(delay * (backoff ** attempt), Config.MAX_RETRY_DELAY)
-                        logger.warning(f"API/Network error (attempt {attempt + 1}/{max_retries + 1}). "
-                                     f"Retrying in {wait_time:.1f} seconds...")
+                        wait_time = min(
+                            delay * (backoff**attempt), Config.MAX_RETRY_DELAY
+                        )
+                        logger.warning(
+                            f"API/Network error (attempt {attempt + 1}/{max_retries + 1}). "
+                            f"Retrying in {wait_time:.1f} seconds..."
+                        )
                         logger.info(f"Error details: {error_str}")
                         time.sleep(wait_time)
                         continue
                     else:
-                        logger.error(f"API/Network still unavailable after {max_retries} retries. "
-                                   f"Total wait time: {sum(min(delay * (backoff ** i), Config.MAX_RETRY_DELAY) for i in range(max_retries)):.1f} seconds")
+                        logger.error(
+                            f"API/Network still unavailable after {max_retries} retries. "
+                            f"Total wait time: {sum(min(delay * (backoff**i), Config.MAX_RETRY_DELAY) for i in range(max_retries)):.1f} seconds"
+                        )
                         raise e
                 else:
                     # For non-retryable errors, don't retry
                     logger.error(f"Non-retryable error: {error_str}")
                     raise e
-        
+
         return None
-    
+
     return wrapper
+
 
 # Research functions for the Content Researcher Agent
 def search_web_func(query: str) -> str:
@@ -73,20 +97,21 @@ def search_web_func(query: str) -> str:
         logger.info(f"🔍 Searching web for: {query}")
         results = google_search(query, num=8)
         logger.info(f"✅ Found {len(results)} search results for: {query}")
-        return json.dumps({
-            "query": query,
-            "results": results,
-            "total_found": len(results)
-        }, indent=2)
+        return json.dumps(
+            {"query": query, "results": results, "total_found": len(results)}, indent=2
+        )
     except Exception as e:
         logger.error(f"❌ Web search error for '{query}': {e}")
         # Return mock data if API fails - but clearly indicate it's mock data
-        return json.dumps({
-            "query": query,
-            "error": str(e),
-            "results": [],
-            "note": "Search API not available, using topic-based content generation"
-        })
+        return json.dumps(
+            {
+                "query": query,
+                "error": str(e),
+                "results": [],
+                "note": "Search API not available, using topic-based content generation",
+            }
+        )
+
 
 def scrape_content_func(url: str) -> str:
     """Scrape content from a webpage URL."""
@@ -99,10 +124,11 @@ def scrape_content_func(url: str) -> str:
         logger.error(f"❌ Scraping error for {url}: {e}")
         return json.dumps({"error": str(e), "url": url, "content": ""})
 
+
 def analyze_topic_func(topic: str) -> str:
     """Analyze a topic and generate relevant research points when web search is not available."""
     logger.info(f"🧠 Analyzing topic: {topic}")
-    
+
     # Create topic-specific research structure
     analysis = {
         "topic": topic,
@@ -112,44 +138,46 @@ def analyze_topic_func(topic: str) -> str:
             f"Key achievements and milestones related to {topic}",
             f"Current status and recent developments about {topic}",
             f"Impact and significance of {topic}",
-            f"Future outlook and implications of {topic}"
+            f"Future outlook and implications of {topic}",
         ],
-        "content_focus": f"Generate content specifically about '{topic}' and not generic presentation advice"
+        "content_focus": f"Generate content specifically about '{topic}' and not generic presentation advice",
     }
-    
+
     logger.info(f"✅ Topic analysis completed for: {topic}")
     return json.dumps(analysis, indent=2)
+
 
 class PPTAgents:
     """
     Defines all the AI agents for PPT generation using CrewAI framework.
     Each agent has a specific role in the presentation creation pipeline.
     """
-    
+
     def __init__(self, use_fallback_model=False):
         try:
-            self.model = Config.FALLBACK_MODEL if use_fallback_model else Config.CREWAI_MODEL
+            self.model = (
+                Config.FALLBACK_MODEL if use_fallback_model else Config.CREWAI_MODEL
+            )
             self.use_fallback = use_fallback_model
             if use_fallback_model:
                 logger.info(f"Using fallback model: {self.model}")
-            
+
             # Create model instance with generation settings
             self.model_instance = genai.GenerativeModel(
-                self.model,
-                generation_config=DEFAULT_GENERATION_CONFIG
+                self.model, generation_config=DEFAULT_GENERATION_CONFIG
             )
             logger.info(f"Successfully initialized model: {self.model}")
         except Exception as e:
             logger.error(f"Error initializing agent model: {e}")
             raise
-            
+
     def presentation_generator_agent(self):
         """
         Presentation Generator Agent: Creates the final presentation output from the content and design specifications.
         """
         return Agent(
-            role='Presentation Generator',
-            goal='Transform the design specifications into a polished, interactive presentation',
+            role="Presentation Generator",
+            goal="Transform the design specifications into a polished, interactive presentation",
             backstory="""You are an expert presentation developer with years of experience in creating 
             stunning digital presentations. You understand modern web technologies, visual design principles,
             and how to create engaging, interactive presentations. Your skills include implementing smooth
@@ -158,16 +186,18 @@ class PPTAgents:
             professional presentations that effectively communicate the intended message.""",
             verbose=True,
             allow_delegation=False,
-            llm=getattr(self, 'model_instance', self.model)  # Fallback to self.model if model_instance isn't available
+            llm=getattr(
+                self, "model_instance", self.model
+            ),  # Fallback to self.model if model_instance isn't available
         )
-    
+
     def content_researcher_agent(self):
         """
         Content Researcher Agent: Searches and analyzes web content to create presentation structure.
         """
         return Agent(
-            role='Content Researcher',
-            goal=f'Research and gather specific information about the given topic, not generic presentation advice',
+            role="Content Researcher",
+            goal="Research and gather specific information about the given topic, not generic presentation advice",
             backstory="""You are an expert content researcher who specializes in gathering specific 
             information about requested topics. You MUST focus on the exact topic provided by the user 
             and gather real, factual information about that specific subject. You have access to web 
@@ -177,7 +207,7 @@ class PPTAgents:
             information about that specific subject.""",
             verbose=True,
             allow_delegation=False,
-            llm=getattr(self, 'model_instance', self.model)
+            llm=getattr(self, "model_instance", self.model),
         )
 
     def planner_agent(self):
@@ -185,8 +215,8 @@ class PPTAgents:
         Planner Agent: Creates presentation structure based on researched content.
         """
         return Agent(
-            role='Presentation Planner',
-            goal='Analyze researched content and create an engaging presentation structure',
+            role="Presentation Planner",
+            goal="Analyze researched content and create an engaging presentation structure",
             backstory="""You are a professional presentation strategist who excels at organizing 
             information into clear, compelling narratives. You analyze provided research content 
             to identify key themes and create a logical presentation structure. You know how to 
@@ -194,16 +224,16 @@ class PPTAgents:
             naturally while maintaining audience engagement.""",
             verbose=True,
             allow_delegation=False,
-            llm=getattr(self, 'model_instance', self.model)
+            llm=getattr(self, "model_instance", self.model),
         )
-    
+
     def content_creator_agent(self):
         """
         Content Creator Agent: Generates actual textual content for each slide based on the blueprint.
         """
         return Agent(
-            role='Content Creator',
-            goal='Generate engaging and relevant plain-text content for each slide based on the presentation plan',
+            role="Content Creator",
+            goal="Generate engaging and relevant plain-text content for each slide based on the presentation plan",
             backstory="""You are a skilled content writer and researcher who specializes in creating 
             presentation content. You have the ability to transform abstract concepts into clear, 
             engaging text that resonates with audiences. You understand how to write compelling 
@@ -217,16 +247,16 @@ class PPTAgents:
             concise and under 15 words each.""",
             verbose=True,
             allow_delegation=False,
-            llm=self.model
+            llm=self.model,
         )
-    
+
     def designer_agent(self):
         """
         Designer Agent: Defines visual presentation, layout, and styling for each slide.
         """
         return Agent(
-            role='Presentation Designer',
-            goal='Create visually appealing and professional slide designs that enhance content delivery',
+            role="Presentation Designer",
+            goal="Create visually appealing and professional slide designs that enhance content delivery",
             backstory="""You are a professional presentation designer with extensive experience in 
             visual communication and graphic design. You understand color theory, typography, 
             layout principles, and how to create slides that are both beautiful and functional. 
@@ -235,21 +265,22 @@ class PPTAgents:
             maintain consistency and professionalism while being visually engaging.""",
             verbose=True,
             allow_delegation=False,
-            llm=self.model
+            llm=self.model,
         )
+
 
 class PPTTasks:
     """
     Defines all the tasks that agents will perform in the PPT generation pipeline.
     """
-    
+
     def research_task(self, agent, topic, num_slides):
         """
         Task for the Content Researcher Agent to gather and analyze web content.
         """
         # Ensure num_slides is an integer
         num_slides = int(num_slides) if isinstance(num_slides, str) else num_slides
-        
+
         return Task(
             description=f'''
             CRITICAL MISSION: Research and gather specific information about "{topic}" ONLY.
@@ -322,7 +353,7 @@ class PPTTasks:
             CRITICAL: Your research must be about "{topic}" specifically. Do not generate content about presentations, public speaking, or communication skills.
             ''',
             agent=agent,
-            expected_output=f"Comprehensive factual research specifically about '{topic}'"
+            expected_output=f"Comprehensive factual research specifically about '{topic}'",
         )
 
     def planning_task(self, agent, research_result, num_slides):
@@ -331,7 +362,7 @@ class PPTTasks:
         """
         # Ensure num_slides is an integer
         num_slides = int(num_slides) if isinstance(num_slides, str) else num_slides
-        
+
         return Task(
             description=f"""
             Create a {num_slides}-slide presentation structure based ONLY on the research data provided.
@@ -353,7 +384,7 @@ class PPTTasks:
             
             Slide Distribution Strategy:
             - Slide 1: Introduction to the specific topic
-            - Slides 2-{num_slides-1}: Main themes/aspects from research
+            - Slides 2-{num_slides - 1}: Main themes/aspects from research
             - Slide {num_slides}: Conclusion/summary of the topic
             
             Output Format (JSON ONLY):
@@ -377,9 +408,9 @@ class PPTTasks:
             }}
             """,
             agent=agent,
-            expected_output="Presentation structure based ONLY on the researched topic"
+            expected_output="Presentation structure based ONLY on the researched topic",
         )
-    
+
     def content_creation_task(self, agent, planning_result, research_data):
         """
         Task for the Content Creator Agent to generate content for each slide based on research and planning.
@@ -444,9 +475,9 @@ class PPTTasks:
             ALWAYS count words and stay within limits!
             """,
             agent=agent,
-            expected_output="Slide content based strictly on research data about the specific topic"
+            expected_output="Slide content based strictly on research data about the specific topic",
         )
-    
+
     def design_task(self, agent, content_result, research_data):
         """
         Task for the Designer Agent to define visual styling and layout using research insights.
@@ -497,7 +528,7 @@ class PPTTasks:
                - Consistent alignment
             """,
             agent=agent,
-            expected_output="Complete JSON with content and comprehensive design specifications"
+            expected_output="Complete JSON with content and comprehensive design specifications",
         )
 
     def presentation_generation_task(self, agent, design_result):
@@ -809,63 +840,74 @@ class PPTTasks:
             And so on for each slide.
             ''',
             agent=agent,
-            expected_output="A single HTML file containing the complete presentation."
+            expected_output="A single HTML file containing the complete presentation.",
         )
-    
+
     @staticmethod
     def validate_content_length(content_data):
         """
         Validate that content adheres to length constraints.
-        
+
         Args:
             content_data (dict): Content data with slides
-            
+
         Returns:
             tuple: (is_valid, validation_errors)
         """
         errors = []
-        
+
         # Check presentation title
-        if 'presentation_title' in content_data:
-            title_words = len(content_data['presentation_title'].split())
+        if "presentation_title" in content_data:
+            title_words = len(content_data["presentation_title"].split())
             if title_words > 10:
-                errors.append(f"Presentation title too long: {title_words} words (max 10)")
-        
+                errors.append(
+                    f"Presentation title too long: {title_words} words (max 10)"
+                )
+
         # Check each slide
-        if 'slides' in content_data:
-            for slide in content_data['slides']:
-                slide_num = slide.get('slide_number', 'Unknown')
-                
+        if "slides" in content_data:
+            for slide in content_data["slides"]:
+                slide_num = slide.get("slide_number", "Unknown")
+
                 # Check slide title
-                if 'title' in slide:
-                    title_words = len(slide['title'].split())
+                if "title" in slide:
+                    title_words = len(slide["title"].split())
                     if title_words > 10:
-                        errors.append(f"Slide {slide_num} title too long: {title_words} words (max 10)")
-                
+                        errors.append(
+                            f"Slide {slide_num} title too long: {title_words} words (max 10)"
+                        )
+
                 # Check content based on type
-                if 'main_content' in slide and 'content_type' in slide:
-                    content = slide['main_content']
-                    content_type = slide['content_type']
-                    
-                    if content_type == 'bullet_points':
+                if "main_content" in slide and "content_type" in slide:
+                    content = slide["main_content"]
+                    content_type = slide["content_type"]
+
+                    if content_type == "bullet_points":
                         # Count bullet points (assuming each line is a bullet)
-                        bullet_count = len([line for line in content.split('\n') if line.strip()])
+                        bullet_count = len(
+                            [line for line in content.split("\n") if line.strip()]
+                        )
                         if bullet_count > 6:
-                            errors.append(f"Slide {slide_num} has too many bullet points: {bullet_count} (max 6)")
-                    
-                    elif content_type == 'paragraph':
+                            errors.append(
+                                f"Slide {slide_num} has too many bullet points: {bullet_count} (max 6)"
+                            )
+
+                    elif content_type == "paragraph":
                         # Count words in paragraph
                         word_count = len(content.split())
                         if word_count > 50:
-                            errors.append(f"Slide {slide_num} paragraph too long: {word_count} words (max 50)")
-        
+                            errors.append(
+                                f"Slide {slide_num} paragraph too long: {word_count} words (max 50)"
+                            )
+
         return len(errors) == 0, errors
+
 
 class PPTCrew:
     """
     Orchestrates the AI agents in the presentation creation process.
     """
-    
+
     def __init__(self, use_fallback_model=False):
         self.agents = PPTAgents(use_fallback_model)
         self.tasks = PPTTasks()  # Initialize tasks instance
@@ -876,7 +918,7 @@ class PPTCrew:
         Create a research-driven presentation using multiple AI agents.
         """
         logger.info(f"🚀 PPTCrew starting presentation creation for topic: '{topic}'")
-        
+
         # Initialize agents
         researcher = self.agents.content_researcher_agent()
         planner = self.agents.planner_agent()
@@ -885,21 +927,19 @@ class PPTCrew:
         generator = self.agents.presentation_generator_agent()
 
         # Ensure num_slides is an integer
-        num_slides = style_preferences.get('num_slides', 5)
+        num_slides = style_preferences.get("num_slides", 5)
         num_slides = int(num_slides) if isinstance(num_slides, str) else num_slides
         logger.info(f"📊 Creating {num_slides} slides about: '{topic}'")
 
         # Research Phase: Gather and analyze web content
         logger.info(f"🔍 PHASE 1: Starting research for topic: '{topic}'")
-        research_task = self.tasks.research_task(
-            researcher, topic, num_slides
-        )
+        research_task = self.tasks.research_task(researcher, topic, num_slides)
 
         crew = Crew(
             agents=[researcher],
             tasks=[research_task],
             process=Process.sequential,
-            verbose=True
+            verbose=True,
         )
 
         logger.info(f"🔍 Executing research phase for: '{topic}'")
@@ -908,16 +948,14 @@ class PPTCrew:
 
         # Planning Phase: Create structure based on research
         logger.info(f"📋 PHASE 2: Starting planning based on research about: '{topic}'")
-        planning_task = self.tasks.planning_task(
-            planner, research_result, num_slides
-        )
+        planning_task = self.tasks.planning_task(planner, research_result, num_slides)
         planning_task.context = [research_task]
 
         crew = Crew(
             agents=[planner],
             tasks=[planning_task],
             process=Process.sequential,
-            verbose=True
+            verbose=True,
         )
 
         logger.info(f"📋 Executing planning phase for: '{topic}'")
@@ -935,7 +973,7 @@ class PPTCrew:
             agents=[content_creator],
             tasks=[content_task],
             process=Process.sequential,
-            verbose=True
+            verbose=True,
         )
 
         logger.info(f"✍️ Executing content creation for: '{topic}'")
@@ -944,16 +982,14 @@ class PPTCrew:
 
         # Design Phase
         logger.info(f"🎨 PHASE 4: Designing presentation for: '{topic}'")
-        design_task = self.tasks.design_task(
-            designer, content_result, research_result
-        )
+        design_task = self.tasks.design_task(designer, content_result, research_result)
         design_task.context = [content_task, research_task]
 
         crew = Crew(
             agents=[designer],
             tasks=[design_task],
             process=Process.sequential,
-            verbose=True
+            verbose=True,
         )
 
         logger.info(f"🎨 Executing design phase for: '{topic}'")
@@ -971,18 +1007,20 @@ class PPTCrew:
             agents=[generator],
             tasks=[generation_task],
             process=Process.sequential,
-            verbose=True
+            verbose=True,
         )
 
         logger.info(f"🏗️ Executing final generation for: '{topic}'")
         final_result = crew.kickoff()
         logger.info(f"🎉 Presentation generation COMPLETED for: '{topic}'")
         import subprocess
-        subprocess.run([
-            "notify-send",
-            "--icon=dialog-information",
-            "PPT Generator",
-        ])
 
-        
+        subprocess.run(
+            [
+                "notify-send",
+                "--icon=dialog-information",
+                "PPT Generator",
+            ]
+        )
+
         return final_result

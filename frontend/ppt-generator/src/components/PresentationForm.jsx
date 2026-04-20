@@ -67,24 +67,6 @@ export function PresentationForm({ onSubmit, isLoading, onFormChange, isComplete
           </p>
         </div>
 
-        {/* <div className="space-y-3">
-          <label htmlFor="description" className="block text-sm font-semibold text-gray-700">
-            Additional Context (Optional)
-          </label>
-          <textarea
-            id="description"
-            name="description"
-            value={formData.description}
-            onChange={handleChange}
-            placeholder="Share any specific aspects, target audience, or key points you'd like to emphasize..."
-            rows={4}
-            className="input-field resize-none text-gray-800 placeholder-gray-500"
-          />
-          <p className="text-xs text-gray-500 font-medium">
-            🎯 Help our AI understand your vision better
-          </p>
-        </div> */}
-
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-3">
             <label htmlFor="num_slides" className="block text-sm font-semibold text-gray-700">

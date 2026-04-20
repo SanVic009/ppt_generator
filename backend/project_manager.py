@@ -6,7 +6,6 @@ from agents import PPTCrew
 from config import Config
 import logging
 from themes import ThemeConfig, PPTThemes
-from flask import render_template_string
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -676,99 +675,6 @@ class PPTProjectManager:
         logger.warning("No project-specific slides found, using fallback method")
         return self._create_html_presentation_fallback(plan_data, project_id, theme)
 
-    # def _create_html_presentation_fallback(self, plan_data: dict, project_id: str, theme: ThemeConfig) -> str:
-    #     """
-    #     Creates an HTML presentation from the plan data and converts it to PDF.
-        
-    #     Args:
-    #         plan_data (dict): The presentation plan data containing slides and content
-    #         project_id (str): The unique identifier for the presentation
-    #         theme (ThemeConfig): The theme configuration to use
-            
-    #     Returns:
-    #         str: Path to the generated PDF file
-    #     """
-    #     logger.info(f"Creating HTML presentation data with theme: {theme.display_name}")
-
-    #     # Structure the presentation data for the template
-    #     presentation_data = {
-    #         'id': project_id,
-    #         'title': plan_data.get('presentation_title', 'Generated Presentation'),
-    #         'theme': theme.name,
-    #         'metadata': {
-    #             'description': plan_data.get('presentation_description', 'Created with AI'),
-    #             'author': plan_data.get('author', 'AI Presentation Generator'),
-    #             'date': datetime.now().strftime("%Y-%m-%d")
-    #         },
-    #         'slides': []
-    #     }
-
-    #     # Process each slide
-    #     for slide_data in plan_data.get('slides', []):
-    #         html_slide = {
-    #             "type": slide_data.get("content_type", "content"),
-    #             "title": slide_data.get("title", ""),
-    #             "subtitle": slide_data.get("subtitle", ""),
-    #             "layout": slide_data.get("layout_style", "standard"),
-    #             "background": {
-    #                 "type": "solid",
-    #                 "value": theme.color_scheme.background_start
-    #             },
-    #             "content": []
-    #         }
-
-    #         # Convert content based on type
-    #         if slide_data.get("content_type") == "bullet_points" and slide_data.get("bullet_points"):
-    #             html_slide["content"].append({
-    #                 "type": "list",
-    #                 "value": slide_data["bullet_points"]
-    #             })
-    #         elif slide_data.get("content_type") == "paragraph" and slide_data.get("content"):
-    #             html_slide["content"].append({
-    #                 "type": "text",
-    #                 "value": slide_data["content"]
-    #             })
-    #         elif slide_data.get("content_type") == "two_column" and (slide_data.get("left_content") or slide_data.get("right_content")):
-    #             html_slide["content"].append({
-    #                 "type": "columns",
-    #                 "value": {
-    #                     "left": slide_data.get("left_content", ""),
-    #                     "right": slide_data.get("right_content", "")
-    #                 }
-    #             })
-    #         elif slide_data.get("content"):
-    #             # Default text content
-    #             html_slide["content"].append({
-    #                 "type": "text",
-    #                 "value": slide_data["content"]
-    #             })
-
-    #         presentation_data['slides'].append(html_slide)
-
-    #     # Generate HTML using the template
-    #     html_content = render_template_string(
-    #         PRESENTATION_TEMPLATE,
-    #         presentation=presentation_data,
-    #         theme_css=theme.get_css()
-    #     )
-
-    #     # Store the HTML for debugging
-    #     debug_dir = os.path.join(Config.TEMP_DIR, "debug_html")
-    #     os.makedirs(debug_dir, exist_ok=True)
-    #     html_path = os.path.join(debug_dir, f"presentation_{project_id}.html")
-        
-    #     with open(html_path, 'w', encoding='utf-8') as f:
-    #         f.write(html_content)
-    #     logger.info(f"Saved HTML presentation to: {html_path}")
-        
-    #     # Generate PDF from the HTML
-    #     try:
-    #         pdf_path = self._generate_pdf_from_html(project_id, html_content)
-    #         logger.info(f"Generated PDF at: {pdf_path}")
-    #         return pdf_path
-    #     except Exception as e:
-    #         logger.error(f"Error generating PDF: {str(e)}")
-    #         raise
 
     def _generate_pdf_from_html(self, project_id: str, html_content: str) -> str:
         """Generate PDF from HTML content with proper styling for PDF output"""

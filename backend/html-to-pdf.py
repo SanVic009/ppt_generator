@@ -1,5 +1,4 @@
 from weasyprint import HTML, CSS
-from weasyprint.formatting_structure import boxes
 
 # Hardcoded paths
 INPUT_HTML = "/home/sanvict/Documents/ppt_generator/backend/temp/html_outputs/20250827_005000_slide1.html"

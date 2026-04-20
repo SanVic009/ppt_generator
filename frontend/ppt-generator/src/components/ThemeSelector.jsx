@@ -21,11 +21,11 @@ export function ThemeSelector({ themes, selectedTheme, onThemeChange }) {
           <div
             key={theme.name}
             onClick={() => onThemeChange(theme.name)}
-            className={`theme-card p-5 rounded-2xl border-2 cursor-pointer ${
-              selectedTheme === theme.name
-                ? 'selected'
-                : 'border-white/30 hover:border-white/50'
-            }`}
+              className={`theme-card p-5 rounded-2xl border-2 cursor-pointer ${
+                selectedTheme === theme.name
+                  ? 'selected'
+                  : 'border-white/30 hover:border-white/50'
+              }`}
           >
             <div className="flex items-center justify-between">
               <div className="flex-1">
