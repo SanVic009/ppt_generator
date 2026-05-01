@@ -10,3 +10,6 @@ requests==2.32.3
 dataclasses-json==0.6.4
 weasyprint==60.2
 beautifulsoup4==4.12.3
+python-pptx>=1.0.2
+pydyf==0.8.0
+tavily-python>=0.3.0

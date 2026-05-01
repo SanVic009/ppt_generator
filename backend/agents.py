@@ -2,8 +2,8 @@ import time
 import json
 import logging
 
-import google.generativeai as genai
-from crewai import Agent, Task, Crew, Process
+from crewai import Agent, Task, Crew, Process, LLM
+from crewai.tools import tool
 
 from config import Config
 from scraper import google_search, scrape_webpage
@@ -11,16 +11,7 @@ from scraper import google_search, scrape_webpage
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Configure Gemini API
-genai.configure(api_key=Config.GEMINI_API_KEY)
 
-# Generation settings will be applied when creating the model
-DEFAULT_GENERATION_CONFIG = {
-    "temperature": 0.7,
-    "top_p": 0.8,
-    "top_k": 40,
-    "max_output_tokens": 8192,
-}
 
 
 def retry_with_backoff(func, max_retries=None, delay=None, backoff=None):
@@ -91,8 +82,9 @@ def retry_with_backoff(func, max_retries=None, delay=None, backoff=None):
 
 
 # Research functions for the Content Researcher Agent
+@tool("Search Web")
 def search_web_func(query: str) -> str:
-    """Search the web using Google Custom Search API for a given query."""
+    """Search the web using Google Custom Search API for a given query. Use this to find current, factual information about any topic."""
     try:
         logger.info(f"🔍 Searching web for: {query}")
         results = google_search(query, num=8)
@@ -113,8 +105,9 @@ def search_web_func(query: str) -> str:
         )
 
 
+@tool("Scrape Webpage")
 def scrape_content_func(url: str) -> str:
-    """Scrape content from a webpage URL."""
+    """Scrape and extract text content from a webpage URL. Use this after searching to get full article content."""
     try:
         logger.info(f"📄 Scraping content from: {url}")
         result = scrape_webpage(url)
@@ -155,18 +148,17 @@ class PPTAgents:
 
     def __init__(self, use_fallback_model=False):
         try:
-            self.model = (
-                Config.FALLBACK_MODEL if use_fallback_model else Config.CREWAI_MODEL
-            )
+            model_name = Config.FALLBACK_MODEL if use_fallback_model else Config.CREWAI_MODEL
             self.use_fallback = use_fallback_model
             if use_fallback_model:
-                logger.info(f"Using fallback model: {self.model}")
+                logger.info(f"Using fallback model: {model_name}")
 
-            # Create model instance with generation settings
-            self.model_instance = genai.GenerativeModel(
-                self.model, generation_config=DEFAULT_GENERATION_CONFIG
+            self.llm = LLM(
+                model=model_name,
+                api_key=Config.GEMINI_API_KEY,
+                temperature=0.7,
             )
-            logger.info(f"Successfully initialized model: {self.model}")
+            logger.info(f"Successfully initialized LLM: {model_name}")
         except Exception as e:
             logger.error(f"Error initializing agent model: {e}")
             raise
@@ -186,9 +178,7 @@ class PPTAgents:
             professional presentations that effectively communicate the intended message.""",
             verbose=True,
             allow_delegation=False,
-            llm=getattr(
-                self, "model_instance", self.model
-            ),  # Fallback to self.model if model_instance isn't available
+            llm=self.llm,
         )
 
     def content_researcher_agent(self):
@@ -207,7 +197,8 @@ class PPTAgents:
             information about that specific subject.""",
             verbose=True,
             allow_delegation=False,
-            llm=getattr(self, "model_instance", self.model),
+            llm=self.llm,
+            tools=[search_web_func, scrape_content_func],
         )
 
     def planner_agent(self):
@@ -224,7 +215,7 @@ class PPTAgents:
             naturally while maintaining audience engagement.""",
             verbose=True,
             allow_delegation=False,
-            llm=getattr(self, "model_instance", self.model),
+            llm=self.llm,
         )
 
     def content_creator_agent(self):
@@ -247,7 +238,7 @@ class PPTAgents:
             concise and under 15 words each.""",
             verbose=True,
             allow_delegation=False,
-            llm=self.model,
+            llm=self.llm,
         )
 
     def designer_agent(self):
@@ -265,7 +256,7 @@ class PPTAgents:
             maintain consistency and professionalism while being visually engaging.""",
             verbose=True,
             allow_delegation=False,
-            llm=self.model,
+            llm=self.llm,
         )
 
 
@@ -283,6 +274,13 @@ class PPTTasks:
 
         return Task(
             description=f'''
+            TOOLS AVAILABLE TO YOU:
+            - Use the "Search Web" tool to search for current information about the topic.
+            - Use the "Scrape Webpage" tool on promising URLs from search results to get full content.
+            - Limit the scraping to a maximum of 5 URLs using the "Scrape Webpage" tool.
+            - Only after gathering real data from your tools should you populate the OUTPUT STRUCTURE below.
+            - If search returns no results, still generate content based on your training knowledge about the specific topic — never generate content about presentations or public speaking.
+
             CRITICAL MISSION: Research and gather specific information about "{topic}" ONLY.
             
             You are researching: "{topic}"
@@ -356,21 +354,15 @@ class PPTTasks:
             expected_output=f"Comprehensive factual research specifically about '{topic}'",
         )
 
-    def planning_task(self, agent, research_result, num_slides):
-        """
-        Task for the Planner Agent to create presentation structure from research.
-        """
-        # Ensure num_slides is an integer
+    def planning_task(self, agent, research_result=None, num_slides=5):
         num_slides = int(num_slides) if isinstance(num_slides, str) else num_slides
 
         return Task(
             description=f"""
-            Create a {num_slides}-slide presentation structure based ONLY on the research data provided.
-            
-            Research Data: {research_result}
+            Create a {num_slides}-slide presentation structure based ONLY on the research data provided to you in context by the Content Researcher.
             
             CRITICAL RULES:
-            1. Use ONLY the topic and information from the research data
+            1. Use ONLY the topic and information from the research context provided
             2. Do NOT add generic presentation advice
             3. Create slides specifically about the researched topic
             4. Base slide titles and content on the research themes and facts
@@ -411,74 +403,46 @@ class PPTTasks:
             expected_output="Presentation structure based ONLY on the researched topic",
         )
 
-    def content_creation_task(self, agent, planning_result, research_data):
-        """
-        Task for the Content Creator Agent to generate content for each slide based on research and planning.
-        """
+    def content_creation_task(self, agent, planning_result=None, research_data=None):
         return Task(
-            description=f"""
-            Generate specific content for each slide using ONLY the research data and planning structure provided.
-            
-            Planning Structure: {planning_result}
-            Research Data: {research_data}
+            description="""
+            Generate specific content for each slide using the research and planning structure provided to you in context.
             
             STRICT CONTENT RULES:
-            1. Use ONLY information from the research data provided
+            1. Use ONLY information from the research context provided
             2. Do NOT create generic presentation advice or tips
             3. Focus on the specific topic that was researched
             4. Each slide must contain factual information about the topic
-            5. Use research themes, facts, and sources provided
-            6. Content must be plain text - NO markdown formatting
+            5. Content must be plain text - NO markdown formatting
             
             CONTENT LENGTH CONSTRAINTS:
-            7. Slide titles: Maximum 10 words per title
-            8. Bullet points: Maximum 5-6 bullet points per slide
-            9. Paragraphs: Maximum 40-50 words per paragraph
-            10. Keep content concise to ensure proper slide formatting and readability
-            
-            For each slide, create content that:
-            - Relates directly to the researched topic
-            - Uses facts and themes from the research data
-            - Includes specific information, not generic advice
-            - Cites sources when using specific facts
-            - STRICTLY FOLLOWS LENGTH LIMITS (count words carefully!)
-            - Prioritizes clarity and conciseness for slide readability
-            
-            Content Types:
-            - bullet_points: Use research facts as bullet points (MAX 5-6 points, each ≤ 10 words)
-            - paragraph: Write paragraphs using research information (MAX 40-50 words per paragraph)
-            - title_only: Create impactful titles about the topic (MAX 10 words)
-            - two_column: Compare aspects from research data (each column ≤ 50 words)
+            6. Slide titles: Maximum 10 words per title
+            7. Bullet points: Maximum 5-6 bullet points per slide
+            8. Paragraphs: Maximum 40-50 words per paragraph
+            9. Keep content concise to ensure proper slide formatting
             
             Output Format (JSON):
-            {{
+            {
                 "presentation_title": "Title from planning (≤ 10 words)",
                 "topic_focus": "The specific topic researched",
                 "slides": [
-                    {{
+                    {
                         "slide_number": 1,
-                        "title": "Slide title from planning (≤ 10 words)",
+                        "title": "Slide title (≤ 10 words)",
                         "subtitle": "Subtitle if needed (≤ 8 words)",
                         "content_type": "From planning structure",
-                        "main_content": "Content based on research data (follow length constraints by type)",
+                        "main_content": "Content based on research data",
                         "sources": ["Sources from research data"],
                         "research_basis": "Which research theme this content is based on"
-                    }}
+                    }
                 ]
-            }}
-            
-            CONTENT LENGTH EXAMPLES:
-            - Title: "AI Impact on Modern Healthcare" (5 words ✓)
-            - Bullet Point: "• Reduces diagnosis time by 40%" (6 words ✓)
-            - Paragraph: "Machine learning algorithms analyze medical data faster than traditional methods, improving patient outcomes significantly across multiple healthcare sectors." (19 words ✓)
-            
-            ALWAYS count words and stay within limits!
+            }
             """,
             agent=agent,
             expected_output="Slide content based strictly on research data about the specific topic",
         )
 
-    def design_task(self, agent, content_result, research_data):
+    def design_task(self, agent, content_result=None, research_data=None):
         """
         Task for the Designer Agent to define visual styling and layout using research insights.
         """
@@ -486,8 +450,7 @@ class PPTTasks:
             description=f"""
             Define the visual design and layout for a research-backed presentation.
             
-            Content Structure: {content_result}
-            Research Data: {research_data}
+            Use the content structure and research data provided to you in context by the previous agents.
             
             For each slide:
             1. Choose layout based on content type and research data
@@ -531,7 +494,7 @@ class PPTTasks:
             expected_output="Complete JSON with content and comprehensive design specifications",
         )
 
-    def presentation_generation_task(self, agent, design_result):
+    def presentation_generation_task(self, agent, design_result=None):
         """
         Task for the Presentation Generator Agent to create the final presentation.
         """
@@ -539,7 +502,7 @@ class PPTTasks:
             description=f'''
             Create individual HTML files for each slide with enhanced visual design and interactive elements.
 
-            Design Specifications: {design_result}
+            Use the design specifications provided to you in context by the Presentation Designer agent.
 
             CRITICAL REQUIREMENTS:
 
@@ -919,6 +882,11 @@ class PPTCrew:
         """
         logger.info(f"🚀 PPTCrew starting presentation creation for topic: '{topic}'")
 
+        # Ensure num_slides is an integer
+        num_slides = style_preferences.get("num_slides", 5)
+        num_slides = int(num_slides) if isinstance(num_slides, str) else num_slides
+        logger.info(f"📊 Creating {num_slides} slides about: '{topic}'")
+
         # Initialize agents
         researcher = self.agents.content_researcher_agent()
         planner = self.agents.planner_agent()
@@ -926,101 +894,31 @@ class PPTCrew:
         designer = self.agents.designer_agent()
         generator = self.agents.presentation_generator_agent()
 
-        # Ensure num_slides is an integer
-        num_slides = style_preferences.get("num_slides", 5)
-        num_slides = int(num_slides) if isinstance(num_slides, str) else num_slides
-        logger.info(f"📊 Creating {num_slides} slides about: '{topic}'")
-
-        # Research Phase: Gather and analyze web content
-        logger.info(f"🔍 PHASE 1: Starting research for topic: '{topic}'")
+        # Define all tasks with context chaining
         research_task = self.tasks.research_task(researcher, topic, num_slides)
 
-        crew = Crew(
-            agents=[researcher],
-            tasks=[research_task],
-            process=Process.sequential,
-            verbose=True,
-        )
-
-        logger.info(f"🔍 Executing research phase for: '{topic}'")
-        research_result = crew.kickoff()
-        logger.info(f"✅ Research phase completed for: '{topic}'")
-
-        # Planning Phase: Create structure based on research
-        logger.info(f"📋 PHASE 2: Starting planning based on research about: '{topic}'")
-        planning_task = self.tasks.planning_task(planner, research_result, num_slides)
+        planning_task = self.tasks.planning_task(planner, research_result=None, num_slides=num_slides)
         planning_task.context = [research_task]
 
+        content_task = self.tasks.content_creation_task(content_creator, planning_result=None, research_data=None)
+        content_task.context = [research_task, planning_task]
+
+        design_task = self.tasks.design_task(designer, content_result=None, research_data=None)
+        design_task.context = [research_task, planning_task, content_task]
+
+        generation_task = self.tasks.presentation_generation_task(generator, design_result=None)
+        generation_task.context = [research_task, planning_task, content_task, design_task]
+
+        # Single crew runs all agents sequentially
         crew = Crew(
-            agents=[planner],
-            tasks=[planning_task],
+            agents=[researcher, planner, content_creator, designer, generator],
+            tasks=[research_task, planning_task, content_task, design_task, generation_task],
             process=Process.sequential,
             verbose=True,
         )
 
-        logger.info(f"📋 Executing planning phase for: '{topic}'")
-        planning_result = crew.kickoff()
-        logger.info(f"✅ Planning phase completed for: '{topic}'")
-
-        # Content Creation Phase
-        logger.info(f"✍️ PHASE 3: Creating content for: '{topic}'")
-        content_task = self.tasks.content_creation_task(
-            content_creator, planning_result, research_result
-        )
-        content_task.context = [planning_task, research_task]
-
-        crew = Crew(
-            agents=[content_creator],
-            tasks=[content_task],
-            process=Process.sequential,
-            verbose=True,
-        )
-
-        logger.info(f"✍️ Executing content creation for: '{topic}'")
-        content_result = crew.kickoff()
-        logger.info(f"✅ Content creation completed for: '{topic}'")
-
-        # Design Phase
-        logger.info(f"🎨 PHASE 4: Designing presentation for: '{topic}'")
-        design_task = self.tasks.design_task(designer, content_result, research_result)
-        design_task.context = [content_task, research_task]
-
-        crew = Crew(
-            agents=[designer],
-            tasks=[design_task],
-            process=Process.sequential,
-            verbose=True,
-        )
-
-        logger.info(f"🎨 Executing design phase for: '{topic}'")
-        design_result = crew.kickoff()
-        logger.info(f"✅ Design phase completed for: '{topic}'")
-
-        # Generation Phase
-        logger.info(f"🏗️ PHASE 5: Generating final presentation for: '{topic}'")
-        generation_task = self.tasks.presentation_generation_task(
-            generator, design_result
-        )
-        generation_task.context = [design_task]
-
-        crew = Crew(
-            agents=[generator],
-            tasks=[generation_task],
-            process=Process.sequential,
-            verbose=True,
-        )
-
-        logger.info(f"🏗️ Executing final generation for: '{topic}'")
+        logger.info(f"🔍 Kicking off full pipeline for: '{topic}'")
         final_result = crew.kickoff()
         logger.info(f"🎉 Presentation generation COMPLETED for: '{topic}'")
-        import subprocess
-
-        subprocess.run(
-            [
-                "notify-send",
-                "--icon=dialog-information",
-                "PPT Generator",
-            ]
-        )
 
         return final_result
