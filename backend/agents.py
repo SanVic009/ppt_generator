@@ -8,6 +8,14 @@ from crewai import Agent, Task, Crew, Process
 from config import Config
 from scraper import google_search, scrape_webpage
 
+try:
+    from crewai.tools import tool
+except ImportError:
+    try:
+        from crewai_tools import tool
+    except ImportError:
+        from langchain.tools import tool
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -91,8 +99,9 @@ def retry_with_backoff(func, max_retries=None, delay=None, backoff=None):
 
 
 # Research functions for the Content Researcher Agent
+@tool("Search Web")
 def search_web_func(query: str) -> str:
-    """Search the web using Google Custom Search API for a given query."""
+    """Search the web using Tavily API for a given query. Use this to find real factual information."""
     try:
         logger.info(f"🔍 Searching web for: {query}")
         results = google_search(query, num=8)
@@ -113,8 +122,9 @@ def search_web_func(query: str) -> str:
         )
 
 
+@tool("Scrape Webpage")
 def scrape_content_func(url: str) -> str:
-    """Scrape content from a webpage URL."""
+    """Scrape content from a webpage URL to read the detailed information."""
     try:
         logger.info(f"📄 Scraping content from: {url}")
         result = scrape_webpage(url)
@@ -207,6 +217,7 @@ class PPTAgents:
             information about that specific subject.""",
             verbose=True,
             allow_delegation=False,
+            tools=[search_web_func, scrape_content_func],
             llm=getattr(self, "model_instance", self.model),
         )
 
@@ -282,76 +293,53 @@ class PPTTasks:
         num_slides = int(num_slides) if isinstance(num_slides, str) else num_slides
 
         return Task(
-            description=f'''
-            CRITICAL MISSION: Research and gather specific information about "{topic}" ONLY.
-            
-            You are researching: "{topic}"
-            Target slides: {num_slides}
-            
-            MANDATORY REQUIREMENTS:
-            1. Focus EXCLUSIVELY on "{topic}" - this is your research subject
-            2. Do NOT research "presentation skills", "how to present", or "presentation tips"
-            3. Research factual information, background, and key details about "{topic}"
-            4. Gather current information and recent developments about "{topic}"
-            5. Find key facts, achievements, and significance of "{topic}"
-            
-            RESEARCH AREAS FOR "{topic}":
-            - Background and history of {topic}
-            - Key facts and information about {topic}
-            - Recent developments and current status of {topic}
-            - Achievements and milestones related to {topic}
-            - Impact and significance of {topic}
-            - Notable quotes or statements about {topic}
-            
-            OUTPUT STRUCTURE (JSON format):
+            description=f"""
+            You are a research agent. Your sole objective is to gather factual, structured information about the following topic:
+
+            TOPIC: "{topic}"
+            TARGET SLIDES: {num_slides}
+
+            ---
+
+            RESEARCH SCOPE:
+            Investigate the following dimensions of "{topic}":
+            - Origins and historical background
+            - Key facts, milestones, and achievements
+            - Current status and recent developments (as of your knowledge cutoff)
+            - Broader impact, significance, and influence
+            - Any notable figures, events, or data points closely associated with it
+
+            ---
+
+            OUTPUT: Return a single valid JSON object with this schema:
+
             {{
                 "researched_topic": "{topic}",
-                "research_focus": "Specific information about {topic}",
-                "research_method": "Topic analysis and fact gathering",
                 "main_themes": [
                     {{
-                        "theme": "Background of {topic}",
-                        "importance": 9,
-                        "content": "Historical background and origin of {topic}",
-                        "key_points": ["Specific facts about {topic}"]
-                    }},
-                    {{
-                        "theme": "Key achievements of {topic}",
-                        "importance": 8,
-                        "content": "Major accomplishments and milestones of {topic}",
-                        "key_points": ["Notable achievements of {topic}"]
-                    }},
-                    {{
-                        "theme": "Current status of {topic}",
-                        "importance": 8,
-                        "content": "Recent developments and current situation of {topic}",
-                        "key_points": ["Current facts about {topic}"]
-                    }},
-                    {{
-                        "theme": "Impact of {topic}",
-                        "importance": 7,
-                        "content": "Significance and influence of {topic}",
-                        "key_points": ["Impact areas of {topic}"]
+                        "theme": "<theme title>",
+                        "importance": <integer 1-10>,
+                        "content": "<2-4 sentences of actual factual content about this theme>",
+                        "key_points": ["<specific fact>", "<specific fact>", "<specific fact>"]
                     }}
                 ],
                 "key_facts": [
                     {{
-                        "fact": "Specific factual information about {topic}",
-                        "context": "Context about this aspect of {topic}",
-                        "relevance": "Why this fact is important for understanding {topic}"
+                        "fact": "<a specific, verifiable fact about {topic}>",
+                        "context": "<why this fact matters in the broader picture>",
+                        "relevance": "<how this supports understanding {topic}>"
                     }}
                 ],
                 "suggested_slide_topics": [
-                    "Introduction to {topic}",
-                    "Background and History of {topic}",
-                    "Key Achievements of {topic}",
-                    "Current Status of {topic}",
-                    "Impact and Legacy of {topic}"
+                    "<slide title 1>",
+                    "<slide title 2>"
                 ]
             }}
-            
-            CRITICAL: Your research must be about "{topic}" specifically. Do not generate content about presentations, public speaking, or communication skills.
-            ''',
+
+            Generate exactly {num_slides} entries in suggested_slide_topics.
+            All content must be factual and specific to "{topic}".
+            Do not include meta-commentary, filler text, or template placeholders in the output.
+            """,
             agent=agent,
             expected_output=f"Comprehensive factual research specifically about '{topic}'",
         )
@@ -365,47 +353,59 @@ class PPTTasks:
 
         return Task(
             description=f"""
-            Create a {num_slides}-slide presentation structure based ONLY on the research data provided.
-            
-            Research Data: {research_result}
-            
-            CRITICAL RULES:
-            1. Use ONLY the topic and information from the research data
-            2. Do NOT add generic presentation advice
-            3. Create slides specifically about the researched topic
-            4. Base slide titles and content on the research themes and facts
-            5. Each slide must relate to the specific topic researched
-            
-            CONTENT LENGTH PLANNING:
-            6. Plan slide titles to be ≤ 10 words maximum
-            7. For bullet_points content type: plan for 5-6 bullet points maximum
-            8. For paragraph content type: plan for 40-50 words maximum
-            9. Ensure content fits slide dimensions and readability
-            
-            Slide Distribution Strategy:
-            - Slide 1: Introduction to the specific topic
-            - Slides 2-{num_slides - 1}: Main themes/aspects from research
-            - Slide {num_slides}: Conclusion/summary of the topic
-            
-            Output Format (JSON ONLY):
+            You are a presentation structure agent. Your job is to convert the research data below into a clean, slide-by-slide JSON structure.
+
+            RESEARCH DATA:
+            {research_result}
+
+            ---
+
+            TASK:
+            Create a {num_slides}-slide presentation based strictly on the research data above.
+
+            SLIDE STRUCTURE RULES:
+            - Slide 1: Title/intro slide for the topic
+            - Slides 2 to {num_slides - 1}: One slide per major theme or fact cluster from the research
+            - Slide {num_slides}: Conclusion or summary slide
+
+            CONTENT CONSTRAINTS:
+            - Slide titles: 10 words or fewer
+            - bullet_points type: 5 to 6 bullet points, each under 15 words
+            - paragraph type: 40 to 50 words total
+            - two_column type: 3 points per column, each under 12 words
+            - Do not pad content. If a theme only supports 3 bullets, use 3.
+
+            content_type must be exactly one of: "title_only", "bullet_points", "paragraph", "two_column"
+            Assign content_type based on what best suits the slide's content, not randomly.
+
+            ---
+
+            OUTPUT: A single valid JSON object. No markdown, no commentary outside the JSON.
+
             {{
-                "presentation_title": "Title based on researched topic",
-                "presentation_description": "Description of the specific topic",
-                "target_topic": "The exact topic researched",
-                "total_slides": {num_slides},
-                "slides": [
-                    {{
-                        "slide_number": 1,
-                        "title": "Title based on research theme",
-                        "subtitle": "Subtitle related to the topic",
-                        "content_type": "title_only|bullet_points|paragraph|two_column",
-                        "description": "What this slide covers about the topic",
-                        "research_theme": "Which research theme this slide covers",
-                        "key_points": ["Points from research data"],
-                        "sources": ["Sources from research"]
+            "presentation_title": "<concise title derived from the topic>",
+            "target_topic": "<exact topic from research data>",
+            "total_slides": {num_slides},
+            "slides": [
+                {{
+                    "slide_number": <integer>,
+                    "title": "<slide title, max 10 words>",
+                    "content_type": "<one of: title_only | bullet_points | paragraph | two_column>",
+                    "research_theme": "<which theme from the research this slide covers>",
+                    "content": {{
+                        "bullet_points": ["<point>", "<point>"],
+                        "paragraph": "<paragraph text if content_type is paragraph, else null>",
+                        "columns": {{
+                            "left": ["<point>", "<point>"],
+                            "right": ["<point>", "<point>"]
+                        }}
                     }}
-                ]
+                }}
+            ]
             }}
+
+            Populate only the content fields relevant to the chosen content_type. Set unused fields to null.
+            Every slide must trace back to a specific theme or fact in the research data. Do not invent content.
             """,
             agent=agent,
             expected_output="Presentation structure based ONLY on the researched topic",
@@ -417,63 +417,55 @@ class PPTTasks:
         """
         return Task(
             description=f"""
-            Generate specific content for each slide using ONLY the research data and planning structure provided.
-            
-            Planning Structure: {planning_result}
-            Research Data: {research_data}
-            
-            STRICT CONTENT RULES:
-            1. Use ONLY information from the research data provided
-            2. Do NOT create generic presentation advice or tips
-            3. Focus on the specific topic that was researched
-            4. Each slide must contain factual information about the topic
-            5. Use research themes, facts, and sources provided
-            6. Content must be plain text - NO markdown formatting
-            
-            CONTENT LENGTH CONSTRAINTS:
-            7. Slide titles: Maximum 10 words per title
-            8. Bullet points: Maximum 5-6 bullet points per slide
-            9. Paragraphs: Maximum 40-50 words per paragraph
-            10. Keep content concise to ensure proper slide formatting and readability
-            
-            For each slide, create content that:
-            - Relates directly to the researched topic
-            - Uses facts and themes from the research data
-            - Includes specific information, not generic advice
-            - Cites sources when using specific facts
-            - STRICTLY FOLLOWS LENGTH LIMITS (count words carefully!)
-            - Prioritizes clarity and conciseness for slide readability
-            
-            Content Types:
-            - bullet_points: Use research facts as bullet points (MAX 5-6 points, each ≤ 10 words)
-            - paragraph: Write paragraphs using research information (MAX 40-50 words per paragraph)
-            - title_only: Create impactful titles about the topic (MAX 10 words)
-            - two_column: Compare aspects from research data (each column ≤ 50 words)
-            
-            Output Format (JSON):
-            {{
-                "presentation_title": "Title from planning (≤ 10 words)",
-                "topic_focus": "The specific topic researched",
-                "slides": [
-                    {{
-                        "slide_number": 1,
-                        "title": "Slide title from planning (≤ 10 words)",
-                        "subtitle": "Subtitle if needed (≤ 8 words)",
-                        "content_type": "From planning structure",
-                        "main_content": "Content based on research data (follow length constraints by type)",
-                        "sources": ["Sources from research data"],
-                        "research_basis": "Which research theme this content is based on"
-                    }}
-                ]
-            }}
-            
-            CONTENT LENGTH EXAMPLES:
-            - Title: "AI Impact on Modern Healthcare" (5 words ✓)
-            - Bullet Point: "• Reduces diagnosis time by 40%" (6 words ✓)
-            - Paragraph: "Machine learning algorithms analyze medical data faster than traditional methods, improving patient outcomes significantly across multiple healthcare sectors." (19 words ✓)
-            
-            ALWAYS count words and stay within limits!
-            """,
+                You are a slide content generation agent. Your job is to populate each slide with real content drawn strictly from the research data.
+
+                PLANNING STRUCTURE:
+                {planning_result}
+
+                RESEARCH DATA:
+                {research_data}
+
+                ---
+
+                RULES:
+                - Use only facts and themes present in the research data
+                - No markdown formatting — plain text only
+                - No invented content, generic advice, or filler
+                - Match content_type exactly as defined in the planning structure
+
+                CONTENT CONSTRAINTS BY TYPE:
+                - title_only: title only, no additional content fields needed
+                - bullet_points: 3 to 6 bullets, each a single plain-text sentence under 12 words
+                - paragraph: one block of plain text, 40 to 50 words
+                - two_column: left and right arrays, 3 items each, each item under 12 words
+
+                ---
+
+                OUTPUT: Single valid JSON object, no markdown, no commentary.
+
+                {{
+                    "presentation_title": "<from planning structure, max 10 words>",
+                    "slides": [
+                        {{
+                            "slide_number": <integer>,
+                            "title": "<max 10 words, plain text>",
+                            "content_type": "<must match planning: title_only | bullet_points | paragraph | two_column>",
+                            "content": {{
+                                "bullets": ["<point>", "<point>"] ,
+                                "paragraph": "<paragraph text or null>",
+                                "columns": {{
+                                    "left": ["<point>", "<point>", "<point>"],
+                                    "right": ["<point>", "<point>", "<point>"]
+                                }}
+                            }}
+                        }}
+                    ]
+                }}
+
+                Set unused content fields to null based on content_type.
+                Do not add fields not present in this schema.
+                Every piece of content must be traceable to a theme or fact in the research data.
+                """,
             agent=agent,
             expected_output="Slide content based strictly on research data about the specific topic",
         )
@@ -484,48 +476,66 @@ class PPTTasks:
         """
         return Task(
             description=f"""
-            Define the visual design and layout for a research-backed presentation.
-            
-            Content Structure: {content_result}
-            Research Data: {research_data}
-            
-            For each slide:
-            1. Choose layout based on content type and research data
-            2. Determine appropriate visual elements:
-               - Charts/graphs for statistics
-               - Icons for key concepts
-               - Images for visual support
-               - Diagrams for processes
-            3. Create a cohesive visual theme that:
-               - Reflects the topic's domain
-               - Supports data visualization
-               - Enhances content readability
-            4. Define data presentation formats:
-               - Chart types for statistics
-               - Visual hierarchy for facts
-               - Quote styling for citations
-               - Source attribution layouts
-            
-            Add design specifications:
-            - "layout_type": Based on content and research
-            - "visual_elements": {{"type": "chart|image|icon|diagram", "purpose": "data|concept|process"}}
-            - "color_scheme": Primary and accent colors
-            - "typography": Font choices and text hierarchy
-            - "data_visualization": Chart types and formats
-            - "source_styling": Citation and attribution design
-            
-            Design Guidelines:
-            1. Academic and Professional:
-               - Clean, data-focused layouts
-               - Clear visual hierarchy
-               - Prominent source attributions
-            2. Research Emphasis:
-               - Visualize data effectively
-               - Clear citation formatting
-            3. Visual Balance:
-               - Content-to-whitespace ratio
-               - Text-to-visual balance
-               - Consistent alignment
+            You are a slide design agent. Your job is to assign concrete visual design specifications to each slide based on its content type and subject matter.
+
+            SLIDE CONTENT:
+            {content_result}
+
+            ---
+
+            RULES:
+            - Assign a layout_type that matches the slide's content_type
+            - Choose a color_theme from the allowed list only
+            - Suggest visual_element only if the slide content contains a statistic, process, or comparison — otherwise set to null
+            - Do not invent sources, citations, or data not present in the content
+
+            ALLOWED VALUES:
+
+            layout_type (pick one per slide):
+            - "title_centered" — for title_only slides
+            - "title_left_bullets_right" — for bullet_points slides
+            - "full_text" — for paragraph slides
+            - "two_column_equal" — for two_column slides
+
+            color_theme (pick one for the whole presentation, based on topic domain):
+            - "corporate_blue"    — business, finance, strategy
+            - "deep_green"        — environment, health, science
+            - "slate_gray"        — technology, engineering, AI
+            - "warm_amber"        — culture, history, social topics
+            - "academic_navy"     — research, academia, policy
+
+            visual_element type (only if content justifies it):
+            - "bar_chart" — for numerical comparisons
+            - "timeline"  — for historical or sequential content
+            - "icon_row"  — for listing 3–5 discrete concepts
+            - "image_placeholder" — for slides needing visual context
+
+            ---
+
+            OUTPUT: Single valid JSON object, no markdown.
+
+            {{
+                "color_theme": "<one from allowed list>",
+                "font_pairing": {{
+                    "heading": "Montserrat",
+                    "body": "Open Sans"
+                }},
+                "slides": [
+                    {{
+                        "slide_number": <integer>,
+                        "layout_type": "<one from allowed list>",
+                        "visual_element": {{
+                            "type": "<one from allowed list or null>",
+                            "placement": "top | bottom | left | right | null",
+                            "purpose": "<one sentence describing what it visualizes>"
+                        }}
+                    }}
+                ]
+            }}
+
+            Set visual_element to null if the slide content does not contain data, a process, or a comparison.
+            font_pairing is global — apply the same fonts across all slides.
+            Do not add fields not in this schema.
             """,
             agent=agent,
             expected_output="Complete JSON with content and comprehensive design specifications",
@@ -536,312 +546,81 @@ class PPTTasks:
         Task for the Presentation Generator Agent to create the final presentation.
         """
         return Task(
-            description=f'''
-            Create individual HTML files for each slide with enhanced visual design and interactive elements.
+            description=f"""
+You are a slide content agent. Your job is to select the right component type for each slide and extract the content into structured slots. You do not write HTML. You do not design layouts. You only decide what component fits the content and what the slot values are.
 
-            Design Specifications: {design_result}
+SLIDE CONTENT AND DESIGN DATA:
+{design_result}
 
-            CRITICAL REQUIREMENTS:
+---
 
-            0. CONTENT LENGTH VALIDATION:
-               - Verify titles are ≤ 10 words
-               - Ensure bullet points are ≤ 6 items per slide
-               - Confirm paragraphs are ≤ 50 words
-               - Content must fit properly in slide layout
+COMPONENT TYPES AND WHEN TO USE THEM:
+- hero — Use for the opening slide, closing slide, or any section title slide. Content is a title, optional subtitle, optional short description.
+- bullets_accented — Use when the slide has 3 to 6 distinct bullet points. Content is a title and a list of points.
+- two_column_card — Use when the slide compares two things, lists pros and cons, or covers two distinct subtopics side by side.
+- stat_highlight — Use when the slide contains numbers, percentages, metrics, counts, or any quantitative data. Content is 2 to 4 stat value/label pairs plus optional supporting points.
+- quote_feature — Use when the slide features a key statement, mission, finding, or impactful idea that deserves full visual emphasis.
+- timeline_simple — Use when the slide covers sequential steps, a process, a historical progression, or chronological events. Content is 3 to 5 steps.
+- image_text_split — Use when the slide introduces a single concept, feature, or topic that benefits from a visual symbol alongside explanatory points. Pick a relevant emoji for the concept.
+- full_text_card — Use when the slide content is primarily a single explanatory paragraph. Use this as a last resort only — prefer other components when possible.
 
-            1. Enhanced Visual Structure:
-               - Create stunning, modern slide layouts with visual elements
-               - Use the 16:9 aspect ratio (1920x1080px) effectively
-               - Include visual design elements where appropriate
-               - Each slide must be a self-contained HTML file
-               - No JavaScript or external resources
+SLOT RULES:
+- Only include slots defined for the chosen component
+- Never add extra fields not in the component's slot definition
+- If a slot is marked optional and you have no content for it, set it to null
+- All text values must be plain text — no HTML tags, no markdown
+- For stat_highlight, value must be the actual number or metric as a string, label must be a short descriptive label
+- For timeline_simple, number must be the step number as an integer, title must be short (3 to 5 words), description must be one sentence
+- For image_text_split, visual_symbol must be a single emoji character that meaningfully represents the slide topic
 
-            2. Advanced Content Layout:
-               - All content must be within .slide-content div
-               - Title in .slide-title with visual emphasis
-               - Main content in .slide-body with proper spacing
-               - Add visual elements like cards and icons where appropriate
-               - Use these content classes based on type:
-                 * bullet-points for lists (with visual bullets)
-                 * paragraph for text (with visual cards when appropriate)
-                 * two-column for side-by-side content
-                 * numbered-list for steps (with visual numbers)
-                 * quote for quotations (with visual styling)
-                 * center for title slides (centered content)
+SLOT DEFINITIONS:
+hero: title, subtitle (optional), description (optional)
+bullets_accented: title, points (list of 3-6 strings), footer_note (optional)
+two_column_card: left_title, left_points (list), right_title, right_points (list), slide_title (optional)
+stat_highlight: slide_title, stats (list of objects with "value" and "label"), supporting_points (optional list)
+quote_feature: quote, attribution (optional), context (optional)
+timeline_simple: slide_title, steps (list of objects with "number", "title", "description")
+image_text_split: visual_symbol (single emoji), visual_label, title, points (list of 2-5 strings)
+full_text_card: title, body (paragraph 40-80 words), highlight (optional single sentence)
 
-            3. Visual Enhancement Guidelines:
-               - Use .card divs for important information blocks
-               - Use .visual-element spans for key concepts
-               - Add .center class for title slides
-               - Include visual separators and spacing
+DISTRIBUTION RULES:
+- Slide 1 must always use hero
+- No component type may be used more than 3 times across the whole presentation
+- If the presentation has 8 or more slides, ensure at least 5 distinct component types are used
+- The last slide should use hero or quote_feature
 
-            4. Enhanced HTML Template Structure:
-               Use this exact template with embedded CSS for each slide:
-               
-               ```html
-               <!DOCTYPE html>
-               <html>
-               <head>
-                   <meta charset="UTF-8">
-                   <title>Slide [NUMBER]</title>
-                   <style>
-                       * {{
-                           box-sizing: border-box;
-                           margin: 0;
-                           padding: 0;
-                       }}
-                       
-                       body {{
-                           font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                           width: 1920px;
-                           height: 1080px;
-                           margin: 0;
-                           padding: 0;
-                           background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                           color: #333;
-                           overflow: hidden;
-                       }}
-                       
-                       .slide {{
-                           width: 100%;
-                           height: 100%;
-                           display: flex;
-                           align-items: center;
-                           justify-content: center;
-                           padding: 60px;
-                           position: relative;
-                       }}
-                       
-                       .slide-content {{
-                           background: rgba(255, 255, 255, 0.95);
-                           border-radius: 20px;
-                           padding: 60px;
-                           box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
-                           max-width: 1400px;
-                           width: 100%;
-                           position: relative;
-                       }}
-                       
-                       .slide-title {{
-                           font-size: 3.5rem;
-                           font-weight: bold;
-                           color: #2c3e50;
-                           margin-bottom: 30px;
-                           text-align: center;
-                           line-height: 1.2;
-                       }}
-                       
-                       .slide-body {{
-                           font-size: 1.8rem;
-                           line-height: 1.6;
-                           color: #34495e;
-                       }}
-                       
-                       .center {{
-                           text-align: center;
-                           display: flex;
-                           flex-direction: column;
-                           justify-content: center;
-                           align-items: center;
-                           height: 100%;
-                       }}
-                       
-                       .card {{
-                           background: #f8f9fa;
-                           border-radius: 15px;
-                           padding: 30px;
-                           margin: 20px 0;
-                           border-left: 5px solid #3498db;
-                           box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
-                       }}
-                       
-                       .visual-element {{
-                           display: inline-block;
-                           background: linear-gradient(45deg, #667eea, #764ba2);
-                           color: white;
-                           padding: 8px 16px;
-                           border-radius: 20px;
-                           font-weight: bold;
-                           font-size: 1.6rem;
-                           margin: 5px;
-                       }}
-                       
-                       .bullet-points {{
-                           list-style: none;
-                           padding: 0;
-                       }}
-                       
-                       .bullet-points li {{
-                           margin: 20px 0;
-                           padding-left: 40px;
-                           position: relative;
-                           font-size: 1.6rem;
-                       }}
-                       
-                       .bullet-points li::before {{
-                           content: "●";
-                           color: #3498db;
-                           font-size: 2rem;
-                           position: absolute;
-                           left: 0;
-                           top: -2px;
-                       }}
-                       
-                       .two-column {{
-                           display: grid;
-                           grid-template-columns: 1fr 1fr;
-                           gap: 40px;
-                           align-items: start;
-                       }}
-                       
-                       h2 {{
-                           font-size: 2.5rem;
-                           color: #667eea;
-                           margin-bottom: 20px;
-                           text-align: center;
-                       }}
-                       
-                       h3 {{
-                           font-size: 2rem;
-                           color: #764ba2;
-                           margin-bottom: 15px;
-                       }}
-                       
-                       p {{
-                           margin-bottom: 15px;
-                           text-align: justify;
-                       }}
-                       
-                       .quote {{
-                           font-style: italic;
-                           font-size: 2rem;
-                           color: #555;
-                           text-align: center;
-                           position: relative;
-                           padding: 20px;
-                       }}
-                       
-                       .quote::before {{
-                           content: """;
-                           font-size: 4rem;
-                           color: #3498db;
-                           position: absolute;
-                           top: -10px;
-                           left: -10px;
-                       }}
-                       
-                       .source-citation {{
-                           text-align: right;
-                           font-size: 1.2rem;
-                           color: #7f8c8d;
-                           margin-top: 15px;
-                           font-style: normal;
-                       }}
-                   </style>
-               </head>
-               <body>
-                   <div class="slide">
-                       <div class="slide-content">
-                           <h1 class="slide-title">[TITLE]</h1>
-                           <div class="slide-body">
-                               [VISUALLY ENHANCED CONTENT BASED ON TYPE]
-                           </div>
-                       </div>
-                   </div>
-               </body>
-               </html>
-               ```
+OUTPUT: Single valid JSON object, no markdown wrapper, no code fences, no triple backticks.
 
-            5. Enhanced Content Type Examples:
-               
-               For bullet points with visual elements:
-               ```html
-               <ul class="bullet-points">
-                   <li><span class="visual-element">Key Point</span> Additional explanation</li>
-                   <li>Important term with context</li>
-               </ul>
-               ```
+{{
+    "color_theme": "<carry over from design_result>",
+    "slides": [
+        {{
+            "slide_number": 1,
+            "component": "hero",
+            "slots": {{
+                "title": "Slide title here",
+                "subtitle": "Optional subtitle here",
+                "description": null
+            }}
+        }},
+        {{
+            "slide_number": 2,
+            "component": "bullets_accented",
+            "slots": {{
+                "title": "Slide title here",
+                "points": ["Point one", "Point two", "Point three"],
+                "footer_note": null
+            }}
+        }}
+    ]
+}}
 
-               For cards with important information:
-               ```html
-               <div class="card">
-                   <h3>Important Concept</h3>
-                   <p>Detailed explanation with emphasized terms</p>
-               </div>
-               ```
-
-               For two columns with visual balance:
-               ```html
-               <div class="two-column">
-                   <div class="column">
-                       <div class="card">
-                           <h3>Left Topic</h3>
-                           <p>Content here</p>
-                       </div>
-                   </div>
-                   <div class="column">
-                       <div class="card">
-                           <h3>Right Topic</h3>
-                           <p>Content here</p>
-                       </div>
-                   </div>
-               </div>
-               ```
-
-               For centered title slides:
-               ```html
-               <div class="center">
-                   <h1 class="slide-title">Main Title</h1>
-                   <h2>Subtitle</h2>
-                   <p>Brief description with key points</p>
-               </div>
-               ```
-
-               For quotes with visual styling:
-               ```html
-               <div class="card">
-                   <div class="quote">
-                       <p>"Quote text here"</p>
-                       <div class="source-citation">- Source Name</div>
-                   </div>
-               </div>
-               ```
-
-            6. Design Rules:
-               - Use visual elements strategically, not on every slide
-               - Maintain readability and balance
-               - Use cards for important information blocks
-               - Keep consistent visual hierarchy
-               - The CSS is already provided in the template above - USE IT EXACTLY
-               - Clean, semantic HTML structure
-
-            7. Content Guidelines:
-               - Never exceed slide boundaries
-               - Keep titles to 1-2 lines maximum
-               - For bullet points, limit to 5-6 items
-               - Use visual elements to break up text
-               - Add source citations for factual content
-
-            8. CRITICAL: You MUST use the HTML template structure above INCLUDING the <style> section.
-               Each slide should be a complete HTML file with embedded CSS styling.
-
-            Format your response as a series of HTML code blocks, one for each slide:
-
-            ```html
-            <!-- Slide 1 -->
-            [HTML for slide 1]
-            ```
-
-            ```html
-            <!-- Slide 2 -->
-            [HTML for slide 2]
-            ```
-
-            And so on for each slide.
-            ''',
+Every slide must have slide_number, component, and slots. The slots object must match exactly the slot definition for the chosen component.
+            """,
             agent=agent,
-            expected_output="A single HTML file containing the complete presentation.",
+            expected_output="A single valid JSON object with color_theme and slides array, each slide having slide_number, component, and slots.",
         )
+
 
     @staticmethod
     def validate_content_length(content_data):

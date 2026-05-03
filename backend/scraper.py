@@ -7,39 +7,36 @@ import sys
 
 load_dotenv()
 
-def google_search(query, num=4):
+def google_search(query, num=8):
     """
-    Perform a Google Custom Search query using API key and CSE ID from env vars.
+    Perform a web search using Tavily API.
     
     :param query: Search query string
-    :param num: Number of results (max 10 per request)
+    :param num: Number of results to return
     :return: List of results (title, link, snippet)
     """
-    api_key = os.getenv("CUSTOM_SEARCH_API")
-    cse_id = os.getenv("CSE_ID")
+    api_key = os.getenv("TAVILY_API_KEY")
 
-    if not api_key or not cse_id:
-        raise ValueError("ENV ERROR")
+    if not api_key:
+        raise ValueError("TAVILY_API_KEY not set in environment variables")
 
-    url = "https://www.googleapis.com/customsearch/v1"
-    params = {
-        "q": query,
-        "key": api_key,
-        "cx": cse_id,
-        "num": num,
-    }
-    response = requests.get(url, params=params)
+    from tavily import TavilyClient
+    client = TavilyClient(api_key=api_key)
+
+    response = client.search(
+        query=query,
+        max_results=num,
+        search_depth="advanced",
+    )
+
     results = []
-    if response.status_code == 200:
-        data = response.json()
-        for item in data.get("items", []):
-            results.append({
-                "title": item["title"],
-                "link": item["link"],
-                "snippet": item["snippet"],
-            })
-    else:
-        print("Error:", response.status_code, response.text)
+    for item in response.get("results", []):
+        results.append({
+            "title": item.get("title", ""),
+            "link": item.get("url", ""),
+            "snippet": item.get("content", ""),
+        })
+
     return results
 
 def scrape_webpage(url, timeout=10):

@@ -1,13 +1,13 @@
 from weasyprint import HTML, CSS
 
 # Hardcoded paths
-INPUT_HTML = "/home/sanvict/Documents/ppt_generator/backend/temp/html_outputs/20250827_005000_slide1.html"
+INPUT_HTML = "/home/sanvict/Documents/Code/ppt_generator/backend/temp/debug_html/presentation_the_agentic_ai_manus.html"
 OUTPUT_PDF = "backend/temp/asdf.pdf"
 
 # 16:9 aspect ratio PowerPoint dimensions
 css = CSS(string='''
     @page {
-        size: 1920px 1080px;
+        size: 20in 11.25in;
         margin: 0;
         padding: 0;
     }
@@ -21,8 +21,8 @@ css = CSS(string='''
     body {
         margin: 0;
         padding: 0;
-        width: 1920px;
-        height: 1080px;
+        width: 20in;
+        height: 11.25in;
         position: relative;
         overflow: hidden;
         font-family: Arial, sans-serif;
