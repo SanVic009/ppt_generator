@@ -2,7 +2,7 @@
 
 A complete multi-agent AI-based presentation generator system using CrewAI and Gemini API. Transform your ideas into beautiful presentations with the power of specialized AI agents.
 
-## 🚀 Features
+## Features
 
 - **Multi-Agent AI System**: Three specialized agents work together to create your presentation
   - **Planner Agent**: Analyzes requirements and creates presentation blueprint
@@ -13,7 +13,7 @@ A complete multi-agent AI-based presentation generator system using CrewAI and G
 - **PowerPoint Export**: Generates actual .pptx files ready for use
 - **Customizable**: Specify number of slides (1-20) and detailed requirements
 
-## 🏗️ System Architecture
+## System Architecture
 
 ### Backend (Flask + CrewAI)
 - **Flask API**: RESTful endpoints for presentation management
@@ -28,13 +28,13 @@ A complete multi-agent AI-based presentation generator system using CrewAI and G
 - **Responsive Design**: Works on desktop and mobile devices
 - **Professional Styling**: Dark theme with gradient colors and animations
 
-## 📋 Prerequisites
+## Prerequisites
 
 - Python 3.11+
 - Node.js 20+
 - Gemini API Key from Google AI Studio
 
-## 🛠️ Installation & Setup
+## Installation & Setup
 
 ### 1. Extract the Project
 ```bash
@@ -67,20 +67,20 @@ The backend will start on `http://localhost:5000`
 
 ### 3. Frontend Setup
 ```bash
-cd frontend/ppt-generator-ui
+cd frontend/ppt-generator
 
 # Install dependencies
-pnpm install
+npm install
 
 # Start the development server
-pnpm run dev --host
+npm run dev
 ```
 
-The frontend will start on `http://localhost:5173`
+The frontend will start on `http://localhost:3000`
 
-## 🎯 Usage
+## Usage
 
-1. **Open the Application**: Navigate to `http://localhost:5173`
+1. **Open the Application**: Navigate to `http://localhost:3000`
 2. **Enter Description**: Describe the presentation you want to create
 3. **Set Slide Count**: Choose number of slides (1-20)
 4. **Generate**: Click "Generate Presentation" and watch the AI agents work
@@ -91,7 +91,7 @@ The frontend will start on `http://localhost:5173`
 - "Make a presentation on climate change solutions for corporate sustainability"
 - "Generate slides about digital marketing strategies for small businesses"
 
-## 🔧 Configuration
+## Configuration
 
 ### Environment Variables (.env)
 ```
@@ -106,7 +106,7 @@ FLASK_DEBUG=True
 - `DEFAULT_SLIDES`: Default slide count (default: 5)
 - `AGENT_TIMEOUT`: Timeout for each agent (default: 300 seconds)
 
-## 📡 API Endpoints
+## API Endpoints
 
 ### REST API
 - `POST /api/generate` - Start presentation generation
@@ -122,7 +122,7 @@ FLASK_DEBUG=True
 - `project_completed` - Generation completed
 - `project_failed` - Generation failed
 
-## 🤖 AI Agents
+## AI Agents
 
 ### Planner Agent
 - **Role**: Presentation Strategist
@@ -139,10 +139,10 @@ FLASK_DEBUG=True
 - **Responsibility**: Defines visual styling, layouts, and design specifications
 - **Output**: Complete JSON with design specifications and styling instructions
 
-## 🎨 Customization
+## Customization
 
 ### Styling
-- Modify `frontend/ppt-generator-ui/src/App.css` for custom themes
+- Modify `frontend/ppt-generator/src/index.css` for custom themes
 - Update color schemes in the CSS variables
 - Customize component styles using Tailwind classes
 
@@ -156,7 +156,7 @@ FLASK_DEBUG=True
 - Update color schemes and fonts in the `_create_powerpoint` method
 - Add custom slide templates and styling
 
-## 🚀 Deployment
+## Deployment
 
 ### Backend Deployment
 ```bash
@@ -170,13 +170,13 @@ gunicorn -w 4 -b 0.0.0.0:5000 app:app
 ### Frontend Deployment
 ```bash
 # Build for production
-pnpm run build
+npm run build
 
 # Serve static files
 # Deploy the dist/ folder to your web server
 ```
 
-## 🔍 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
@@ -216,7 +216,7 @@ pnpm run build
    - Set `FLASK_USE_RELOADER=False` in your `.env` file
    - The system now persists project state and can recover from interruptions
 
-## 📝 File Structure
+## File Structure
 
 ```
 ppt_generator/
@@ -230,18 +230,17 @@ ppt_generator/
 │   ├── generated_ppts/        # Generated presentations
 │   └── temp/                  # Temporary files
 ├── frontend/
-│   └── ppt-generator-ui/      # React application
+│   └── ppt-generator/         # React application
 │       ├── src/
 │       │   ├── App.jsx        # Main React component
-│       │   ├── App.css        # Styling
+│       │   ├── index.css      # Styling
 │       │   └── components/    # UI components
 │       ├── package.json       # Node dependencies
 │       └── public/            # Static assets
-├── README.md                  # This file
-└── todo.md                    # Development progress
+└── README.md                  # This file
 ```
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch
@@ -249,18 +248,18 @@ ppt_generator/
 4. Test thoroughly
 5. Submit a pull request
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License.
 
-## 🆘 Support
+## Support
 
 For support and questions:
 - Check the troubleshooting section above
 - Review the configuration options
 - Ensure all dependencies are properly installed
 
-## 🔮 Future Enhancements
+## Future Enhancements
 
 - Support for more presentation formats (PDF, Google Slides)
 - Additional AI models integration
@@ -272,5 +271,5 @@ For support and questions:
 
 ---
 
-**Built with ❤️ using CrewAI, Gemini API, React, and Flask**
+**Built with CrewAI, Gemini API, React, and Flask**
 
