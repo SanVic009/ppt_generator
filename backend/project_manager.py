@@ -1,11 +1,17 @@
 import os
 import json
 import re
+import io
+import asyncio
+import uuid
+import pypdf
+import logging
 from datetime import datetime
+from playwright.async_api import async_playwright
 from agents import PPTCrew
 from config import Config
-import logging
 from themes import ThemeConfig, PPTThemes
+from components import get_component_html
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -426,7 +432,17 @@ class PPTProjectManager:
             # PPTProjectManager._log_agent_response(project_id, "Planner Agent", json.dumps(plan_data, indent=2))
             
             self.emit_progress(project_id, 'packaging', 'Creating presentation assets...')
-            pdf_path = self._create_html_presentation(plan_data, project_id, theme)
+            html_paths = self._create_html_presentation(plan_data, project_id, theme)
+            
+            output_pdf_path = os.path.join(Config.GENERATED_PPTS_DIR, f"presentation_{project_id}.pdf")
+            
+            try:
+                # Use Playwright to render the PDFs
+                asyncio.run(self.convert_slides_to_pdf(html_paths, output_pdf_path))
+                pdf_path = output_pdf_path
+            except Exception as e:
+                logger.error(f"Error generating PDF with Playwright: {e}")
+                raise
             
             self.emit_progress(project_id, 'pdf_generation', 'PDF generated successfully.')
 
@@ -516,63 +532,72 @@ class PPTProjectManager:
                 plan_data['slides'][i] = {'title': f'Slide {i + 1}', 'content': 'Generated content'}
         return True
 
-    def _create_html_presentation(self, plan_data: dict, project_id: str, theme: ThemeConfig) -> str:
-        """Process and combine separate HTML slides into a PDF presentation"""
+    def _create_html_presentation(self, plan_data: dict, project_id: str, theme: ThemeConfig) -> list[str]:
+        """Process JSON plan_data into individual HTML slides using component-based rendering."""
         logger.info(f"Processing HTML slides for theme: {theme.display_name}")
         
-        # Check for project-specific HTML slides first
-        html_project_dir = os.path.join(Config.HTML_OUTPUTS_DIR, project_id)
+        # Override theme if the agent selected a specific one
+        agent_theme_name = plan_data.get("color_theme")
+        if agent_theme_name:
+            agent_theme = PPTThemes.get_theme(agent_theme_name)
+            if agent_theme:
+                theme = agent_theme
+                logger.info(f"Overriding theme to: {theme.display_name}")
+
+        slides_data = plan_data.get('slides', [])
         
-        if os.path.exists(html_project_dir):
-            slide_files = sorted([f for f in os.listdir(html_project_dir) if f.startswith('slide') and f.endswith('.html')])
+        if not slides_data:
+            logger.warning("No slides found in plan_data! Creating a default slide.")
+            slides_data = [{
+                'slide_number': 1,
+                'component': 'full_text_card',
+                'slots': {'title': 'Error', 'body': 'No content generated.', 'highlight': None}
+            }]
             
-            if slide_files:
-                logger.info(f"Found {len(slide_files)} slide files in project directory")
-                combined_slides = []
-                
-                for slide_file in slide_files:
-                    slide_path = os.path.join(html_project_dir, slide_file)
-                    with open(slide_path, 'r', encoding='utf-8') as f:
-                        slide_content = f.read().strip()
-                        
-                        # Wrap each slide in a page container for proper PDF pagination
-                        slide_wrapped = f"""
-                        <div class="slide-page" style="
-                            width: 1920px; 
-                            height: 1080px; 
-                            page-break-after: always; 
-                            box-sizing: border-box;
-                            padding: 40px;
-                            display: flex;
-                            flex-direction: column;
-                            justify-content: center;
-                            background: {theme.color_scheme.background_start};
-                            color: {theme.color_scheme.text_primary};
-                            font-family: {theme.font_scheme.title_font};
-                            position: relative;
-                            overflow: hidden;
-                        ">
-                            {slide_content}
-                        </div>
-                        """
-                        combined_slides.append(slide_wrapped)
-                
-                # Create complete HTML document with proper PDF styling
-                html_content = f"""<!DOCTYPE html>
+        logger.info(f"Processing {len(slides_data)} slides from JSON data")
+        
+        debug_dir = os.path.join(Config.TEMP_DIR, "debug_html", project_id)
+        os.makedirs(debug_dir, exist_ok=True)
+        html_paths = []
+        
+        for idx, slide in enumerate(slides_data):
+            component_name = slide.get('component', 'full_text_card')
+            slots = slide.get('slots', {})
+            
+            # Get fully rendered component HTML (entire slide body, inline CSS)
+            component_html = get_component_html(component_name, slots, theme)
+            
+            # Outer slide page wrapper — dimensions and bounding box only,
+            # components handle their own background and layout internally
+            slide_wrapped = f"""
+            <div style="
+                width: 1920px;
+                height: 1080px;
+                overflow: hidden;
+                box-sizing: border-box;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: {theme.color_scheme.background_start};
+                font-family: {theme.font_scheme.content_font}, system-ui, sans-serif;
+                position: relative;
+            ">
+                {component_html}
+            </div>
+            """
+            
+            # Create complete HTML document for this single slide
+            html_content = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{plan_data.get('presentation_title', 'Generated Presentation')}</title>
+    <title>{plan_data.get('presentation_title', 'Generated Presentation')} - Slide {idx+1}</title>
     <style>
         {theme.get_css()}
         
-        @page {{
-            size: 1920px 1080px;
-            margin: 0;
-        }}
-        
-        * {{
+        @page {{ size: 1920px 1080px; margin: 0; }}
+
+        *, *::before, *::after {{
             box-sizing: border-box;
         }}
         
@@ -580,190 +605,67 @@ class PPTProjectManager:
             margin: 0;
             padding: 0;
             width: 1920px;
-            font-family: {theme.font_scheme.title_font};
-            line-height: 1.6;
-        }}
-        
-        .slide-page:last-child {{
-            page-break-after: auto;
-        }}
-        
-        /* Enhanced styling for better visual presentation */
-        h1, h2, h3, h4, h5, h6 {{
-            font-family: {theme.font_scheme.title_font};
-            font-weight: bold;
-            margin-bottom: 20px;
-            color: {theme.color_scheme.primary};
-        }}
-        
-        h1 {{ font-size: 3.5rem; }}
-        h2 {{ font-size: 2.8rem; }}
-        h3 {{ font-size: 2.2rem; }}
-        
-        p {{
-            font-size: 1.5rem;
-            margin-bottom: 15px;
-            line-height: 1.6;
-        }}
-        
-        ul, ol {{
-            font-size: 1.4rem;
-            margin-left: 30px;
-            margin-bottom: 20px;
-        }}
-        
-        li {{
-            margin-bottom: 10px;
-            line-height: 1.5;
-        }}
-        
-        .card {{
-            background: rgba(255, 255, 255, 0.9);
-            border-radius: 15px;
-            padding: 30px;
-            margin: 20px 0;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-            border-left: 5px solid {theme.color_scheme.accent};
-        }}
-        
-        .center {{
-            text-align: center;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            height: 100%;
-        }}
-        
-        .two-column {{
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 40px;
-            height: 100%;
-            align-items: center;
-        }}
-        
-        .visual-element {{
-            display: inline-block;
-            background: {theme.color_scheme.accent};
-            color: white;
-            padding: 8px 15px;
-            border-radius: 20px;
-            font-size: 1.2rem;
-            margin: 5px;
+            height: 1080px;
+            overflow: hidden;
         }}
     </style>
 </head>
 <body>
-    {''.join(combined_slides)}
+    {slide_wrapped}
 </body>
 </html>"""
-                
-                # Store the HTML for debugging
-                debug_dir = os.path.join(Config.TEMP_DIR, "debug_html")
-                os.makedirs(debug_dir, exist_ok=True)
-                html_path = os.path.join(debug_dir, f"presentation_{project_id}.html")
-                
-                with open(html_path, 'w', encoding='utf-8') as f:
-                    f.write(html_content)
-                logger.info(f"Saved combined HTML presentation to: {html_path}")
-                
-                # Generate PDF from the combined HTML
-                return self._generate_pdf_from_html(project_id, html_content)
-        
-        # Fallback to old method if no project-specific slides found
-        logger.warning("No project-specific slides found, using fallback method")
-        return self._create_html_presentation_fallback(plan_data, project_id, theme)
+            
+            html_path = os.path.join(debug_dir, f"slide_{idx+1}.html")
+            with open(html_path, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            html_paths.append(html_path)
+            
+        logger.info(f"Saved {len(html_paths)} individual HTML slides to {debug_dir}")
+        return html_paths
 
-
-    def _generate_pdf_from_html(self, project_id: str, html_content: str) -> str:
-        """Generate PDF from HTML content with proper styling for PDF output"""
-        from weasyprint import HTML, CSS
-        
-        # Clean the HTML content if it has code block formatting
-        html_content = PPTProjectManager.clean_html_code_block(html_content)
-        logger.info(f"Processing cleaned HTML content for PDF generation: {html_content[:200]}...")
-        
-        project_data = self.projects.get(project_id, {})
-        theme_name = project_data.get('theme_name', 'corporate_blue')
-        theme = PPTThemes.get_theme(theme_name)
-        theme_css = theme.get_css() if theme else ""
-
-        # Enhanced PDF CSS for 16:9 aspect ratio (1920x1080px) with better visual quality
-        pdf_css = f"""
-        @page {{ 
-            size: 1920px 1080px; 
-            margin: 0; 
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-        }}
-        
-        html, body {{ 
-            width: 1920px; 
-            height: 1080px; 
-            margin: 0; 
-            padding: 0;
-            background: {theme.color_scheme.background_start if theme else '#ffffff'}; 
-            font-family: {theme.font_scheme.title_font if theme else 'Arial, sans-serif'};
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-        }}
-        
-        .slide-page {{ 
-            break-after: page; 
-            width: 1920px;
-            height: 1080px;
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            position: relative;
-            overflow: hidden;
-        }}
-        
-        .slide-page:last-child {{
-            break-after: auto;
-        }}
-        
-        /* Ensure proper text rendering */
-        * {{
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-        }}
-        
-        /* Enhanced typography for PDF */
-        h1, h2, h3, h4, h5, h6 {{
-            font-weight: bold;
-            text-rendering: optimizeLegibility;
-            line-height: 1.2;
-        }}
-        
-        p, li {{
-            text-rendering: optimizeLegibility;
-            line-height: 1.5;
-        }}
-        
-        /* Preserve background colors and gradients */
-        .card, .visual-element {{
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-        }}
+    async def convert_slides_to_pdf(self, html_paths: list[str], output_pdf_path: str) -> None:
         """
+        Converts a list of HTML slide files to a single merged PDF using Playwright.
+        Reuses a single browser instance across all slides for performance.
+        Each slide is rendered at 1920x1080px, matching the slide template dimensions.
+        """
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            page = await browser.new_page()
 
-        output_path = os.path.join(Config.GENERATED_PPTS_DIR, f"presentation_{project_id}.pdf")
-        
-        try:
-            HTML(string=html_content, base_url=os.getcwd()).write_pdf(
-                output_path, 
-                stylesheets=[CSS(string=theme_css + pdf_css)],
-                presentational_hints=True,
-                optimize_images=True
-            )
-            logger.info(f"Successfully generated PDF at: {output_path}")
-            return output_path
-        except Exception as e:
-            logger.error(f"Error generating PDF: {str(e)}")
-            raise
+            individual_pdfs = []
+
+            for html_path in html_paths:
+                # Use absolute file path URI so local HTML files load correctly
+                abs_path = os.path.abspath(html_path)
+                await page.goto(f"file://{abs_path}", wait_until="networkidle")
+
+                pdf_bytes = await page.pdf(
+                    width="1920px",
+                    height="1080px",
+                    print_background=True,  # Required to render background colors and gradients
+                    margin={"top": "0", "bottom": "0", "left": "0", "right": "0"}
+                )
+                individual_pdfs.append(pdf_bytes)
+
+            await browser.close()
+
+            # Merge all individual PDF byte blobs into a single PDF file
+            self.merge_pdfs(individual_pdfs, output_pdf_path)
+
+    def merge_pdfs(self, pdf_bytes_list: list[bytes], output_path: str) -> None:
+        """
+        Merges a list of PDF byte blobs into a single PDF file saved at output_path.
+        """
+        writer = pypdf.PdfWriter()
+
+        for pdf_bytes in pdf_bytes_list:
+            reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+            for page in reader.pages:
+                writer.add_page(page)
+
+        with open(output_path, "wb") as f:
+            writer.write(f)
+
+
+

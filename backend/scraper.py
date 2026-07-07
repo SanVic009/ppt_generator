@@ -7,7 +7,7 @@ import sys
 
 load_dotenv()
 
-def google_search(query, num=5):
+def google_search(query, num=8):
     """
     Perform a web search using Tavily API.
     
